@@ -493,6 +493,25 @@ fetch('/api/tree/').then(r => r.json()).then(data => {
         treeEl.appendChild(headingRow);
         if (data.shared) data.shared.forEach(s => renderTree(s, treeEl, '{{ current_path|escapejs }}', 0, 'shared'));
     }
+
+    // Configuration section (admin only)
+    if (data.is_admin) {
+        const configHeading = document.createElement('h2');
+        configHeading.className = 'mt-4 mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-gray-400';
+        configHeading.textContent = 'Configuration';
+        treeEl.appendChild(configHeading);
+
+        const usersLink = document.createElement('div');
+        usersLink.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm text-gray-700 hover:bg-gray-100';
+        usersLink.style.paddingLeft = '20px';
+        usersLink.innerHTML =
+            '<svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>' +
+            '</svg>' +
+            '<span class="truncate">Users</span>';
+        usersLink.addEventListener('click', () => { window.location.href = '/users/'; });
+        treeEl.appendChild(usersLink);
+    }
 });
 
 // Create shared folder
@@ -516,13 +535,28 @@ function createSharedFolder() {
 let currentSfId = null;
 let allUsers = [];
 
+function populateUserSelect() {
+    const select = document.getElementById('add-member-select');
+    if (select.options.length > 1) return;
+    allUsers.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id; opt.textContent = u.username;
+        select.appendChild(opt);
+    });
+}
+
 function openMembersModal(sfId, sfName) {
     currentSfId = sfId;
     document.getElementById('members-modal-title').textContent = sfName;
     openModal('members-modal');
     loadMembers();
-    if (allUsers.length === 0) {
-        fetch('/api/users/').then(r => r.json()).then(data => { allUsers = data.users; });
+    if (allUsers.length > 0) {
+        populateUserSelect();
+    } else {
+        fetch('/api/users/').then(r => r.json()).then(data => {
+            allUsers = data.users;
+            populateUserSelect();
+        });
     }
 }
 
@@ -586,21 +620,7 @@ function addMember() {
     });
 }
 
-// Populate user select when members modal opens
-const membersModalEl = document.getElementById('members-modal');
-const observer = new MutationObserver(() => {
-    if (!membersModalEl.classList.contains('hidden')) {
-        const select = document.getElementById('add-member-select');
-        if (select.options.length <= 1 && allUsers.length > 0) {
-            allUsers.forEach(u => {
-                const opt = document.createElement('option');
-                opt.value = u.id; opt.textContent = u.username;
-                select.appendChild(opt);
-            });
-        }
-    }
-});
-observer.observe(membersModalEl, {attributes: true, attributeFilter: ['class']});
+
 </script>
 
 <!-- New Shared Folder modal -->

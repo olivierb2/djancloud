@@ -5379,3 +5379,8 @@ django.db.utils.OperationalError: no such table: file_user
 [2026-02-26 12:05:59,433] DEBUG file.resource 82360 140338469508800 Resource not found: test/sdsdfds/dsfsdf.txt for user root
 [2026-02-26 12:05:59,433] DEBUG file.resource 82360 140338469508800 Starting file upload for dsfsdf.txt by user root
 [2026-02-26 12:05:59,433] INFO file.resource 82360 140338469508800 Creating new file dsfsdf.txt for user root
+[2026-02-26 12:44:10,540] WARNING django.request 82933 140084832798400 Not Found: /favicon.ico
+[2026-02-26 12:49:53,394] WARNING django.request 87359 140285553313472 Not Found: /favicon.ico
+[2026-02-26 12:49:56,235] WARNING django.request 87359 140285553313472 Not Found: /browse/__shared__/Iabsis shared/Test
+[2026-02-26 13:04:12,954] WARNING django.request 91871 139852775589568 Not Found: /favicon.ico
+[2026-02-26 13:05:38,514] WARNING django.request 91871 139852775589568 Not Found: /favicon.ico

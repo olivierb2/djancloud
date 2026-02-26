@@ -860,11 +860,18 @@ class MoveItemView(LoginRequiredMixin, View):
         root_folder = get_object_or_404(Folder, owner=request.user, full_path=f"/{request.user.username}/")
         breadcrumbs = [{'name': 'Root', 'folder': root_folder}]
 
+        # Shared folders with write access
+        memberships = SharedFolderMembership.objects.filter(
+            user=request.user, permission__in=['write', 'admin']
+        ).select_related('shared_folder__root_folder')
+        shared_folders = [{'id': m.shared_folder.root_folder.id, 'name': m.shared_folder.name} for m in memberships]
+
         context = {
             'item': item,
             'item_type': item_type,
             'current_folder': root_folder,
             'subfolders': root_folder.subfolders.filter(owner=request.user).order_by('name'),
+            'shared_folders': shared_folders,
             'breadcrumbs': breadcrumbs,
             'current_path': '',
         }
@@ -1013,7 +1020,7 @@ class FolderSelectorView(LoginRequiredMixin, View):
                 'path': self._folder_path(request, subfolder),
             })
 
-        return JsonResponse({
+        response = {
             'folder': {
                 'id': folder.id,
                 'name': folder.name or 'Root',
@@ -1021,7 +1028,24 @@ class FolderSelectorView(LoginRequiredMixin, View):
             },
             'breadcrumbs': breadcrumbs,
             'subfolders': subfolders,
-        })
+        }
+
+        # When at user root, also include writable shared folders
+        if not folder_id or folder.full_path == f"/{request.user.username}/":
+            memberships = SharedFolderMembership.objects.filter(
+                user=request.user, permission__in=['write', 'admin']
+            ).select_related('shared_folder__root_folder')
+            shared = []
+            for m in memberships:
+                sf = m.shared_folder
+                shared.append({
+                    'id': sf.root_folder.id,
+                    'name': sf.name,
+                    'path': self._folder_path(request, sf.root_folder),
+                })
+            response['shared_folders'] = shared
+
+        return JsonResponse(response)
 
 
 class RenameItemView(LoginRequiredMixin, View):
@@ -1243,5 +1267,45 @@ class SharedFolderMemberDeleteView(LoginRequiredMixin, View):
 
 class UserListView(LoginRequiredMixin, View):
     def get(self, request):
-        users = User.objects.order_by('username').values_list('id', 'username', flat=False)
-        return JsonResponse({'users': [{'id': u[0], 'username': u[1]} for u in users]})
+        users = User.objects.order_by('username').values('id', 'username', 'role', 'is_active')
+        return JsonResponse({'users': list(users)})
+
+
+class UserCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        if request.user.role != 'admin':
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        data = json.loads(request.body)
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        role = data.get('role', 'user')
+        if not username or not password:
+            return JsonResponse({'error': 'Username and password are required.'}, status=400)
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'error': 'Username already exists.'}, status=400)
+        if role not in ('user', 'admin'):
+            role = 'user'
+        user = User.objects.create_user(username=username, password=password, role=role)
+        return JsonResponse({'id': user.id, 'username': user.username, 'role': user.role})
+
+
+class UserDeleteView(LoginRequiredMixin, View):
+    def delete(self, request, user_id):
+        if request.user.role != 'admin':
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        if user_id == request.user.id:
+            return JsonResponse({'error': 'Cannot delete yourself.'}, status=400)
+        user = get_object_or_404(User, id=user_id)
+        user.delete()
+        return JsonResponse({'ok': True})
+
+
+class UserManagementView(LoginRequiredMixin, View):
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated or request.user.role != 'admin':
+            return redirect('browse_files_root')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        users = User.objects.order_by('username')
+        return render(request, 'file/users.html', {'users': users})

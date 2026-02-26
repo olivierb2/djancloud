@@ -1,2 +1,16 @@
-- createsuper with status admin by default
-- create root with signals on user creation
+Markdown support
+================
+
+maintenant je veux pouvoir modifier les markdown depuis l'interface :
+- ajoute les websocket etc... je veux que ça marche en collaboratif
+
+OnlyOffice / Collabora support
+==============================
+
+Ajouter un lien avec Onlyoffice et Collabora
+
+Configuration > User support
+============================
+
+Ajouter de la gestion des contact carddav et caldav
+===================================================
