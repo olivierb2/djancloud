@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, KeyValuePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subject, takeUntil, switchMap, filter, first } from 'rxjs';
+import { Subject, takeUntil, switchMap, filter, first, debounceTime } from 'rxjs';
 import { NgIcon } from '@ng-icons/core';
 import { FileService, PreviewResponse } from '../../core/services/file.service';
 import { Auth } from '../../core/services/auth';
@@ -12,7 +13,7 @@ import { RoutePaths } from '../../core/constants/routes';
 @Component({
   selector: 'app-editor-page',
   standalone: true,
-  imports: [CommonModule, NgIcon, MilkdownEditorComponent],
+  imports: [CommonModule, FormsModule, NgIcon, MilkdownEditorComponent],
   templateUrl: './editor.html',
   styleUrl: './editor.scss',
 })
@@ -23,6 +24,7 @@ export class EditorPage implements OnInit, OnDestroy {
   private auth = inject(Auth);
   private userService = inject(UserService);
   private destroy$ = new Subject<void>();
+  private autoSave$ = new Subject<void>();
 
   @ViewChild(MilkdownEditorComponent)
   editorComponent!: MilkdownEditorComponent;
@@ -36,8 +38,11 @@ export class EditorPage implements OnInit, OnDestroy {
   connected = false;
   connectedUsers = 0;
   hasUnsavedChanges = false;
+  lastSavedAt = '';
   token = '';
   userName = '';
+  frontmatter: { key: string; value: string }[] = [];
+  showFrontmatter = false;
   private parentPath = '';
 
   protected readonly RoutePaths = RoutePaths;
@@ -53,6 +58,11 @@ export class EditorPage implements OnInit, OnDestroy {
       this.userName = user.email;
     });
 
+    this.autoSave$.pipe(
+      debounceTime(2000),
+      takeUntil(this.destroy$),
+    ).subscribe(() => this.save());
+
     this.route.params
       .pipe(
         takeUntil(this.destroy$),
@@ -65,9 +75,14 @@ export class EditorPage implements OnInit, OnDestroy {
       .subscribe({
         next: (preview: PreviewResponse) => {
           this.fileName = preview.display_name;
-          this.initialContent = preview.content || '';
+          const raw = preview.content || '';
+          const parsed = this.parseFrontmatter(raw);
+          this.frontmatter = parsed.frontmatter;
+          this.showFrontmatter = this.frontmatter.length > 0;
+          this.initialContent = parsed.body;
           this.canWrite = preview.can_write ?? false;
           this.parentPath = preview.parent_path ?? '';
+          this.fileService.setActiveBrowsePath(this.parentPath);
           this.loading = false;
         },
         error: () => {
@@ -84,6 +99,9 @@ export class EditorPage implements OnInit, OnDestroy {
 
   onContentChanged(): void {
     this.hasUnsavedChanges = true;
+    if (this.canWrite) {
+      this.autoSave$.next();
+    }
   }
 
   onConnectionStatusChanged(connected: boolean): void {
@@ -97,16 +115,34 @@ export class EditorPage implements OnInit, OnDestroy {
   save(): void {
     if (!this.editorComponent || this.saving) return;
     this.saving = true;
-    const content = this.editorComponent.getMarkdown();
+    const content = this.serializeFrontmatter() + this.editorComponent.getMarkdown();
     this.fileService.saveFile(this.fileId, content).subscribe({
       next: () => {
         this.saving = false;
         this.hasUnsavedChanges = false;
+        this.lastSavedAt = new Date().toLocaleTimeString();
       },
       error: () => {
         this.saving = false;
       },
     });
+  }
+
+  onFrontmatterChanged(): void {
+    this.hasUnsavedChanges = true;
+    if (this.canWrite) {
+      this.autoSave$.next();
+    }
+  }
+
+  addFrontmatterField(): void {
+    this.frontmatter.push({ key: '', value: '' });
+    this.onFrontmatterChanged();
+  }
+
+  removeFrontmatterField(index: number): void {
+    this.frontmatter.splice(index, 1);
+    this.onFrontmatterChanged();
   }
 
   goBack(): void {
@@ -115,5 +151,37 @@ export class EditorPage implements OnInit, OnDestroy {
     } else {
       this.router.navigate(['/', RoutePaths.APP, RoutePaths.BROWSE]);
     }
+  }
+
+  private parseFrontmatter(content: string): { frontmatter: { key: string; value: string }[]; body: string } {
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+    if (!match) {
+      return { frontmatter: [], body: content };
+    }
+    const yamlBlock = match[1];
+    const body = match[2];
+    const fields: { key: string; value: string }[] = [];
+    for (const line of yamlBlock.split('\n')) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex > 0) {
+        const key = line.substring(0, colonIndex).trim();
+        let value = line.substring(colonIndex + 1).trim();
+        // Remove surrounding quotes
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        fields.push({ key, value });
+      }
+    }
+    return { frontmatter: fields, body };
+  }
+
+  private serializeFrontmatter(): string {
+    if (this.frontmatter.length === 0) return '';
+    const lines = this.frontmatter
+      .filter(f => f.key.trim())
+      .map(f => `${f.key}: "${f.value}"`);
+    if (lines.length === 0) return '';
+    return `---\n${lines.join('\n')}\n---\n`;
   }
 }

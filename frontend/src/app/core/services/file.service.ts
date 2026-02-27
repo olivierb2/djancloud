@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subject } from 'rxjs';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 export interface BrowseResponse {
@@ -60,6 +60,17 @@ export class FileService {
 
   private treeChanged$ = new Subject<void>();
   readonly treeChanged = this.treeChanged$.asObservable();
+
+  private activeBrowsePath$ = new BehaviorSubject<string>('');
+  readonly activeBrowsePath = this.activeBrowsePath$.asObservable();
+
+  setActiveBrowsePath(path: string): void {
+    this.activeBrowsePath$.next(path);
+  }
+
+  getActiveBrowsePath(): string {
+    return this.activeBrowsePath$.getValue();
+  }
 
   notifyTreeChanged(): void {
     this.treeChanged$.next();

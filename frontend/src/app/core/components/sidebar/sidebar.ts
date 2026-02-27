@@ -38,6 +38,7 @@ export class Sidebar implements OnInit, OnDestroy {
   sharedFolders: TreeNode[] = [];
   isAdmin = false;
   expandedFolders = new Set<number>();
+  activeBrowsePath = '';
 
   showCreateSharedModal = false;
   newSharedFolderName = '';
@@ -69,6 +70,10 @@ export class Sidebar implements OnInit, OnDestroy {
         }
       }),
       this.fileService.treeChanged.subscribe(() => this.loadTree()),
+      this.fileService.activeBrowsePath.subscribe(path => {
+        this.activeBrowsePath = path;
+        this.expandActivePath();
+      }),
     );
 
     this.loadTree();
@@ -80,8 +85,32 @@ export class Sidebar implements OnInit, OnDestroy {
         this.tree = res.tree;
         this.sharedFolders = res.shared;
         this.isAdmin = res.is_admin;
+        this.expandActivePath();
       },
     });
+  }
+
+  private expandActivePath(): void {
+    if (!this.activeBrowsePath) return;
+    if (this.tree) {
+      this.expandMatchingNodes(this.tree.children, this.activeBrowsePath);
+    }
+    for (const sf of this.sharedFolders) {
+      this.expandMatchingNodes(sf.children, this.activeBrowsePath);
+    }
+  }
+
+  private expandMatchingNodes(nodes: TreeNode[], currentPath: string): boolean {
+    for (const node of nodes) {
+      if (currentPath === node.url_path || currentPath.startsWith(node.url_path + '/')) {
+        this.expandedFolders.add(node.id);
+        if (node.children.length > 0) {
+          this.expandMatchingNodes(node.children, currentPath);
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   toggleSidebar(): void {
@@ -102,6 +131,10 @@ export class Sidebar implements OnInit, OnDestroy {
 
   isFolderExpanded(folderId: number): boolean {
     return this.expandedFolders.has(folderId);
+  }
+
+  isMyFilesActive(): boolean {
+    return !this.activeBrowsePath.startsWith('__shared__');
   }
 
   openCreateSharedModal(event: Event): void {

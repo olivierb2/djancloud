@@ -17,8 +17,7 @@
     <!-- My Files -->
     <a class="menu-item"
        [routerLink]="'/' + RoutePaths.APP + '/' + RoutePaths.BROWSE"
-       [routerLinkActive]="'active'"
-       [routerLinkActiveOptions]="{ exact: true }"
+       [class.active]="isMyFilesActive()"
        [title]="isCollapsed ? 'My Files' : ''">
       <ng-icon name="heroFolder" size="20"></ng-icon>
       @if (!isCollapsed) {
@@ -51,8 +50,7 @@
         <div class="shared-item-row">
           <a class="menu-item shared-item"
              [routerLink]="'/' + RoutePaths.APP + '/' + RoutePaths.BROWSE + '/' + sf.url_path"
-             [routerLinkActive]="'active'"
-             [routerLinkActiveOptions]="{ exact: true }">
+             [class.active]="activeBrowsePath === sf.url_path || activeBrowsePath.startsWith(sf.url_path + '/')">
             <ng-icon name="heroShare" size="18"></ng-icon>
             <span>{{ sf.name }}</span>
           </a>
@@ -96,7 +94,7 @@
 <!-- Tree node template -->
 <ng-template #treeNode let-node let-depth="depth">
   <div class="tree-item" [style.padding-left.px]="depth * 16">
-    <div class="tree-link" [class.active]="router.url === '/' + RoutePaths.APP + '/' + RoutePaths.BROWSE + '/' + node.url_path">
+    <div class="tree-link" [class.active]="activeBrowsePath === node.url_path">
       @if (node.children.length > 0) {
         <button class="tree-toggle" (click)="toggleFolder(node.id, $event)">
           <ng-icon [name]="isFolderExpanded(node.id) ? 'heroChevronDown' : 'heroChevronRight'" size="14"></ng-icon>

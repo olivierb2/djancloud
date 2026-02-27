@@ -68,6 +68,7 @@ export class BrowsePage implements OnInit, OnDestroy {
         takeUntil(this.destroy$),
         switchMap(params => {
           this.currentPath = params['path'] || '';
+          this.fileService.setActiveBrowsePath(this.currentPath);
           this.loading = true;
           return this.fileService.browse(this.currentPath);
         })

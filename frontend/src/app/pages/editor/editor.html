@@ -21,12 +21,11 @@
         {{ connected ? 'Connected' : 'Disconnected' }}
       </span>
       @if (canWrite) {
-        <button
-          class="btn btn-sm btn-primary"
-          (click)="save()"
-          [disabled]="saving || !hasUnsavedChanges">
-          {{ saving ? 'Saving...' : 'Save' }}
-        </button>
+        @if (saving) {
+          <span class="save-status">Saving...</span>
+        } @else if (lastSavedAt) {
+          <span class="save-status saved">Saved at {{ lastSavedAt }}</span>
+        }
       }
     </div>
   </div>
@@ -37,6 +36,41 @@
       <span>Loading editor...</span>
     </div>
   } @else {
+    @if (showFrontmatter) {
+      <div class="frontmatter-panel">
+        <div class="frontmatter-header">
+          <span class="frontmatter-title">Metadata</span>
+          @if (canWrite) {
+            <button class="btn-icon" (click)="addFrontmatterField()" title="Add field">
+              <ng-icon name="heroPlus" size="14"></ng-icon>
+            </button>
+          }
+        </div>
+        <div class="frontmatter-fields">
+          @for (field of frontmatter; track $index) {
+            <div class="frontmatter-row">
+              <input
+                class="fm-key"
+                [(ngModel)]="field.key"
+                (ngModelChange)="onFrontmatterChanged()"
+                placeholder="key"
+                [disabled]="!canWrite" />
+              <input
+                class="fm-value"
+                [(ngModel)]="field.value"
+                (ngModelChange)="onFrontmatterChanged()"
+                placeholder="value"
+                [disabled]="!canWrite" />
+              @if (canWrite) {
+                <button class="btn-icon btn-delete" (click)="removeFrontmatterField($index)" title="Remove">
+                  <ng-icon name="heroXMark" size="14"></ng-icon>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
     <app-milkdown-editor
       [fileId]="fileId"
       [initialContent]="initialContent"

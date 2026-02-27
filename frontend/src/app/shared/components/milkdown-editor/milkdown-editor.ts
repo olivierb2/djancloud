@@ -96,14 +96,7 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
         .bindDoc(this.ydoc!)
         .setAwareness(this.wsProvider!.awareness);
 
-      this.wsProvider!.once('sync', (isSynced: boolean) => {
-        if (this.destroyed) return;
-        if (isSynced) {
-          collabService.applyTemplate(this.initialContent).connect();
-        } else {
-          collabService.connect();
-        }
-      });
+      collabService.applyTemplate(this.initialContent).connect();
     });
 
     if (this.readonly) {
