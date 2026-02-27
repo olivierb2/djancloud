@@ -5770,3 +5770,13 @@ django.db.utils.OperationalError: no such table: file_user
 [2026-02-27 13:18:17,809] WARNING django.request 351604 140386223773376 Unauthorized: /api/auth/user/
 [2026-02-27 13:18:17,810] WARNING django.request 351604 140386223773376 Unauthorized: /api/tree/
 [2026-02-27 13:18:17,810] WARNING django.request 351604 140386215380672 Unauthorized: /api/preview/72/
+[2026-02-27 14:03:45,985] WARNING django.request 366209 140212076271296 Unauthorized: /api/preview/72/
+[2026-02-27 14:03:45,985] WARNING django.request 366209 140212076271296 Unauthorized: /api/auth/user/
+[2026-02-27 14:03:45,985] WARNING django.request 366209 140212067878592 Unauthorized: /api/tree/
+[2026-02-27 14:03:47,714] WARNING django.request 366209 140212076271296 Unauthorized: /api/auth/user/
+[2026-02-27 14:03:47,714] WARNING django.request 366209 140212067878592 Unauthorized: /api/tree/
+[2026-02-27 14:03:47,714] WARNING django.request 366209 140212059485888 Unauthorized: /api/preview/72/
+[2026-02-27 14:43:49,673] WARNING django.request 366209 140212076271296 Unauthorized: /api/browse/
+[2026-02-27 14:43:49,673] WARNING django.request 366209 140212067878592 Unauthorized: /api/tree/
+[2026-02-27 14:43:49,673] WARNING django.request 366209 140212059485888 Unauthorized: /api/auth/user/
+[2026-02-27 14:44:01,084] WARNING django.request 366209 140212076271296 Not Found: /api/browse/root2/sadasdf/Mes fichiers

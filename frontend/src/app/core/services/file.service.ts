@@ -50,6 +50,7 @@ export interface PreviewResponse {
   content?: string;
   content_type: string;
   can_write?: boolean;
+  parent_path?: string;
 }
 
 @Injectable({ providedIn: 'root' })

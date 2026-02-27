@@ -38,6 +38,7 @@ export class EditorPage implements OnInit, OnDestroy {
   hasUnsavedChanges = false;
   token = '';
   userName = '';
+  private parentPath = '';
 
   protected readonly RoutePaths = RoutePaths;
 
@@ -66,6 +67,7 @@ export class EditorPage implements OnInit, OnDestroy {
           this.fileName = preview.display_name;
           this.initialContent = preview.content || '';
           this.canWrite = preview.can_write ?? false;
+          this.parentPath = preview.parent_path ?? '';
           this.loading = false;
         },
         error: () => {
@@ -108,6 +110,10 @@ export class EditorPage implements OnInit, OnDestroy {
   }
 
   goBack(): void {
-    window.history.back();
+    if (this.parentPath) {
+      this.router.navigate(['/', RoutePaths.APP, RoutePaths.BROWSE, this.parentPath]);
+    } else {
+      this.router.navigate(['/', RoutePaths.APP, RoutePaths.BROWSE]);
+    }
   }
 }

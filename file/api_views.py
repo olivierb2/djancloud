@@ -324,12 +324,14 @@ class FilePreviewView(APIView):
                     text_content = f.read(1024 * 512)
             except Exception:
                 return Response({'error': 'Cannot read file'}, status=status.HTTP_404_NOT_FOUND)
+            parent_path = _folder_url_path(request.user, file_obj.parent) if file_obj.parent else ''
             return Response({
                 'type': 'text',
                 'display_name': display_name,
                 'content': text_content,
                 'content_type': content_type,
                 'can_write': can_write,
+                'parent_path': parent_path,
             })
 
         # Fallback: return metadata only

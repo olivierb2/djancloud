@@ -36,12 +36,14 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
   private crepe: Crepe | null = null;
   private ydoc: Doc | null = null;
   private wsProvider: WebsocketProvider | null = null;
+  private destroyed = false;
 
   ngAfterViewInit(): void {
     this.initEditor();
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.destroyEditor();
   }
 
@@ -59,11 +61,15 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
     );
 
     this.wsProvider.on('status', (event: { status: string }) => {
-      this.connectionStatusChanged.emit(event.status === 'connected');
+      if (!this.destroyed) {
+        this.connectionStatusChanged.emit(event.status === 'connected');
+      }
     });
 
     this.wsProvider.awareness.on('change', () => {
-      this.usersChanged.emit(this.wsProvider!.awareness.getStates().size);
+      if (!this.destroyed && this.wsProvider) {
+        this.usersChanged.emit(this.wsProvider.awareness.getStates().size);
+      }
     });
 
     // Set local user info for remote cursors
@@ -82,6 +88,8 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.crepe.editor.use(collab);
     await this.crepe.create();
 
+    if (this.destroyed) return;
+
     this.crepe.editor.action((ctx) => {
       const collabService = ctx.get(collabServiceCtx);
       collabService
@@ -89,6 +97,7 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
         .setAwareness(this.wsProvider!.awareness);
 
       this.wsProvider!.once('sync', (isSynced: boolean) => {
+        if (this.destroyed) return;
         if (isSynced) {
           collabService.applyTemplate(this.initialContent).connect();
         } else {
@@ -103,7 +112,9 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
 
     this.crepe.on((listener) => {
       listener.markdownUpdated((_ctx: any, markdown: string) => {
-        this.contentChanged.emit(markdown);
+        if (!this.destroyed) {
+          this.contentChanged.emit(markdown);
+        }
       });
     });
   }
@@ -113,12 +124,13 @@ export class MilkdownEditorComponent implements AfterViewInit, OnDestroy {
   }
 
   private destroyEditor(): void {
+    // Destroy crepe first (removes ProseMirror plugins that reference awareness)
+    this.crepe?.destroy();
+    this.crepe = null;
     this.wsProvider?.disconnect();
     this.wsProvider?.destroy();
     this.wsProvider = null;
     this.ydoc?.destroy();
     this.ydoc = null;
-    this.crepe?.destroy();
-    this.crepe = null;
   }
 }
