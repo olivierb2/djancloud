@@ -5764,3 +5764,9 @@ django.db.utils.OperationalError: no such table: file_user
 [2026-02-27 12:10:34,261] WARNING django.request 259482 140346522584768 Not Found: /ocs/v2.php/core/navigation/apps
 [2026-02-27 12:10:34,262] WARNING django.request 259482 140345765521088 Not Found: /ocs/v2.php/core/navigation/apps
 [2026-02-27 12:10:37,004] WARNING django.request 259482 140346150340288 Not Found: /index.php/apps/theming/img/core/filetypes/x-office-document.svg
+[2026-02-27 12:47:36,347] WARNING django.request 351604 140386223773376 Unauthorized: /api/auth/user/
+[2026-02-27 12:47:36,348] WARNING django.request 351604 140386223773376 Unauthorized: /api/tree/
+[2026-02-27 12:47:36,349] WARNING django.request 351604 140386215380672 Unauthorized: /api/browse/
+[2026-02-27 13:18:17,809] WARNING django.request 351604 140386223773376 Unauthorized: /api/auth/user/
+[2026-02-27 13:18:17,810] WARNING django.request 351604 140386223773376 Unauthorized: /api/tree/
+[2026-02-27 13:18:17,810] WARNING django.request 351604 140386215380672 Unauthorized: /api/preview/72/

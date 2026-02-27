@@ -301,7 +301,7 @@ class FileDownloadView(APIView):
 
 class FilePreviewView(APIView):
     def get(self, request, file_id):
-        file_obj, _ = get_accessible_file(request.user, file_id, permission='read')
+        file_obj, can_write = get_accessible_file(request.user, file_id, permission='read')
         if not file_obj:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         if not file_obj.file or not os.path.exists(file_obj.file.path):
@@ -329,6 +329,7 @@ class FilePreviewView(APIView):
                 'display_name': display_name,
                 'content': text_content,
                 'content_type': content_type,
+                'can_write': can_write,
             })
 
         # Fallback: return metadata only
@@ -337,6 +338,28 @@ class FilePreviewView(APIView):
             'display_name': display_name,
             'content_type': content_type,
         })
+
+
+class FileSaveView(APIView):
+    """Save text content back to a file on disk."""
+
+    def post(self, request, file_id):
+        file_obj, can_write = get_accessible_file(request.user, file_id, permission='write')
+        if not file_obj:
+            return Response({'error': 'Not found or no write access'}, status=status.HTTP_404_NOT_FOUND)
+        if not can_write:
+            return Response({'error': 'No write permission'}, status=status.HTTP_403_FORBIDDEN)
+
+        content = request.data.get('content', '')
+        if not isinstance(content, str):
+            return Response({'error': 'Content must be a string'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with open(file_obj.file.path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return Response({'ok': True, 'size': len(content.encode('utf-8'))})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class FileDeleteView(APIView):

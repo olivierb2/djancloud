@@ -17,6 +17,7 @@ from file.api_views import (
     FolderTreeView, FolderSelectorView,
     SharedFolderCreateView, SharedFolderMembersView, SharedFolderMemberDeleteView,
     UserListView, UserCreateView, UserDeleteView,
+    FileSaveView,
 )
 
 dav_view = MyDavView.as_view(
@@ -47,6 +48,7 @@ urlpatterns = [
     # File operations API
     path('api/download/<int:file_id>/', FileDownloadView.as_view(), name='api_download_file'),
     path('api/preview/<int:file_id>/', FilePreviewView.as_view(), name='api_preview_file'),
+    path('api/files/<int:file_id>/save/', FileSaveView.as_view(), name='api_save_file'),
     path('api/files/<int:file_id>/', FileDeleteView.as_view(), name='api_delete_file'),
     path('api/folders/<int:folder_id>/delete/', FolderDeleteView.as_view(), name='api_delete_folder'),
 

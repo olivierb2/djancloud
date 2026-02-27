@@ -18,7 +18,8 @@
           "builder": "@angular/build:application",
           "options": {
             "allowedCommonJsDependencies": [
-              "google-libphonenumber"
+              "google-libphonenumber",
+              "extend"
             ],
             "browser": "src/main.ts",
             "polyfills": [

@@ -3,4 +3,5 @@ export enum RoutePaths {
   APP = 'app',
   BROWSE = 'browse',
   USERS = 'users',
+  EDIT = 'edit',
 }

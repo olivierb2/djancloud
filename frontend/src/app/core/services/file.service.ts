@@ -49,6 +49,7 @@ export interface PreviewResponse {
   display_name: string;
   content?: string;
   content_type: string;
+  can_write?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -112,6 +113,10 @@ export class FileService {
 
   getPreview(id: number): Observable<PreviewResponse> {
     return this.http.get<PreviewResponse>(`${this.apiUrl}/preview/${id}/`);
+  }
+
+  saveFile(id: number, content: string): Observable<{ ok: boolean; size: number }> {
+    return this.http.post<{ ok: boolean; size: number }>(`${this.apiUrl}/files/${id}/save/`, { content });
   }
 
   getFolderContents(folderId?: number): Observable<FolderSelectorResponse> {

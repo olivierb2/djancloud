@@ -102,7 +102,7 @@
     <!-- Files -->
     @for (file of data.files; track file.id) {
       <div class="file-item">
-        <div class="file-info" (click)="openPreview(file.id)">
+        <div class="file-info" (click)="openPreview(file)">
           <ng-icon [name]="getFileIcon(file.content_type)" size="20"></ng-icon>
           <span class="file-name">{{ file.display_name }}</span>
           <span class="file-size">{{ formatSize(file.size) }}</span>

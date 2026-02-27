@@ -38,6 +38,11 @@ const routes: Routes = [
         loadComponent: () =>
           import('../../pages/users/users').then(c => c.UsersPage),
       },
+      {
+        path: `${RoutePaths.EDIT}/:fileId`,
+        loadComponent: () =>
+          import('../../pages/editor/editor').then(c => c.EditorPage),
+      },
     ],
   },
 ];

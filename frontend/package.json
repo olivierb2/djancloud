@@ -24,6 +24,9 @@
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
     "@livekit/track-processors": "^0.7.0",
+    "@milkdown/crepe": "^7.18.0",
+    "@milkdown/kit": "^7.18.0",
+    "@milkdown/plugin-collab": "^7.18.0",
     "@ng-icons/core": "^33.0.0",
     "@ng-icons/heroicons": "^33.0.0",
     "@ng-icons/lucide": "^33.0.0",
@@ -34,6 +37,10 @@
     "ngx-mask": "^20.0.3",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
+    "y-prosemirror": "^1.3.7",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.29",
     "zone.js": "~0.15.0"
   },
   "devDependencies": {

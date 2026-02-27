@@ -211,19 +211,15 @@ export class BrowsePage implements OnInit, OnDestroy {
     });
   }
 
-  // Preview
-  openPreview(id: number): void {
-    this.fileService.getPreview(id).subscribe({
-      next: res => {
-        if (res.type === 'text') {
-          this.previewFileName = res.display_name;
-          this.previewContent = res.content || '';
-          this.showPreviewModal = true;
-        } else {
-          this.downloadFile(id);
-        }
-      },
-    });
+  // Preview / Edit
+  openPreview(file: { id: number; content_type: string }): void {
+    const editable = file.content_type.startsWith('text/') ||
+      ['application/json', 'application/xml', 'application/javascript'].includes(file.content_type);
+    if (editable) {
+      this.router.navigate(['/', RoutePaths.APP, RoutePaths.EDIT, file.id]);
+    } else {
+      this.downloadFile(file.id);
+    }
   }
 
   // Shared folder
