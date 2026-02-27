@@ -20,6 +20,10 @@
       <span class="connection-status" [class.connected]="connected">
         {{ connected ? 'Connected' : 'Disconnected' }}
       </span>
+      <button class="btn btn-sm mode-toggle" (click)="toggleRawMode()" [title]="rawMode ? 'Switch to WYSIWYG' : 'Switch to raw markdown'">
+        <ng-icon [name]="rawMode ? 'heroEye' : 'heroCodeBracket'" size="16"></ng-icon>
+        <span>{{ rawMode ? 'WYSIWYG' : 'Raw' }}</span>
+      </button>
       @if (canWrite) {
         @if (saving) {
           <span class="save-status">Saving...</span>
@@ -71,15 +75,23 @@
         </div>
       </div>
     }
-    <app-milkdown-editor
-      [fileId]="fileId"
-      [initialContent]="initialContent"
-      [readonly]="!canWrite"
-      [token]="token"
-      [userName]="userName"
-      (contentChanged)="onContentChanged()"
-      (connectionStatusChanged)="onConnectionStatusChanged($event)"
-      (usersChanged)="onUsersChanged($event)"
-    />
+    @if (rawMode) {
+      <app-raw-editor
+        [content]="lastMarkdown"
+        [readonly]="!canWrite"
+        (contentChanged)="onRawContentChanged($event)"
+      />
+    } @else {
+      <app-milkdown-editor
+        [fileId]="fileId"
+        [initialContent]="initialContent"
+        [readonly]="!canWrite"
+        [token]="token"
+        [userName]="userName"
+        (contentChanged)="onContentChanged($event)"
+        (connectionStatusChanged)="onConnectionStatusChanged($event)"
+        (usersChanged)="onUsersChanged($event)"
+      />
+    }
   }
 </div>

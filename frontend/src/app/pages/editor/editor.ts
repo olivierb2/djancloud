@@ -8,12 +8,13 @@ import { FileService, PreviewResponse } from '../../core/services/file.service';
 import { Auth } from '../../core/services/auth';
 import { UserService } from '../../core/services/user.service';
 import { MilkdownEditorComponent } from '../../shared/components/milkdown-editor/milkdown-editor';
+import { RawEditorComponent } from '../../shared/components/raw-editor/raw-editor';
 import { RoutePaths } from '../../core/constants/routes';
 
 @Component({
   selector: 'app-editor-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, NgIcon, MilkdownEditorComponent],
+  imports: [CommonModule, FormsModule, NgIcon, MilkdownEditorComponent, RawEditorComponent],
   templateUrl: './editor.html',
   styleUrl: './editor.scss',
 })
@@ -29,6 +30,9 @@ export class EditorPage implements OnInit, OnDestroy {
   @ViewChild(MilkdownEditorComponent)
   editorComponent!: MilkdownEditorComponent;
 
+  @ViewChild(RawEditorComponent)
+  rawEditorComponent!: RawEditorComponent;
+
   fileId = 0;
   fileName = '';
   initialContent = '';
@@ -43,7 +47,9 @@ export class EditorPage implements OnInit, OnDestroy {
   userName = '';
   frontmatter: { key: string; value: string }[] = [];
   showFrontmatter = false;
+  rawMode = false;
   private parentPath = '';
+  lastMarkdown = '';
 
   protected readonly RoutePaths = RoutePaths;
 
@@ -93,11 +99,16 @@ export class EditorPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.hasUnsavedChanges && this.canWrite && this.lastMarkdown) {
+      const content = this.serializeFrontmatter() + this.lastMarkdown;
+      this.fileService.saveFile(this.fileId, content).subscribe();
+    }
     this.destroy$.next();
     this.destroy$.complete();
   }
 
-  onContentChanged(): void {
+  onContentChanged(markdown: string): void {
+    this.lastMarkdown = markdown;
     this.hasUnsavedChanges = true;
     if (this.canWrite) {
       this.autoSave$.next();
@@ -113,9 +124,12 @@ export class EditorPage implements OnInit, OnDestroy {
   }
 
   save(): void {
-    if (!this.editorComponent || this.saving) return;
+    if (this.saving) return;
     this.saving = true;
-    const content = this.serializeFrontmatter() + this.editorComponent.getMarkdown();
+    const md = this.rawMode
+      ? (this.rawEditorComponent?.getContent() ?? this.lastMarkdown)
+      : (this.editorComponent?.getMarkdown() ?? this.lastMarkdown);
+    const content = this.serializeFrontmatter() + md;
     this.fileService.saveFile(this.fileId, content).subscribe({
       next: () => {
         this.saving = false;
@@ -143,6 +157,29 @@ export class EditorPage implements OnInit, OnDestroy {
   removeFrontmatterField(index: number): void {
     this.frontmatter.splice(index, 1);
     this.onFrontmatterChanged();
+  }
+
+  toggleRawMode(): void {
+    if (this.rawMode) {
+      // Switching from raw to WYSIWYG: get content from CodeMirror
+      const rawContent = this.rawEditorComponent?.getContent() ?? this.lastMarkdown;
+      this.lastMarkdown = rawContent;
+      this.initialContent = rawContent;
+      this.rawMode = false;
+    } else {
+      // Switching from WYSIWYG to raw: get content from Milkdown
+      const md = this.editorComponent?.getMarkdown() ?? this.lastMarkdown;
+      this.lastMarkdown = md;
+      this.rawMode = true;
+    }
+  }
+
+  onRawContentChanged(content: string): void {
+    this.lastMarkdown = content;
+    this.hasUnsavedChanges = true;
+    if (this.canWrite) {
+      this.autoSave$.next();
+    }
   }
 
   goBack(): void {

@@ -196,6 +196,17 @@
   color: #1e293b;
 }
 
+.mode-toggle {
+  border-color: #cbd5e1;
+  color: #64748b;
+  font-size: 0.75rem;
+
+  &:hover {
+    background: #f1f5f9;
+    color: #334155;
+  }
+}
+
 .save-status {
   font-size: 0.75rem;
   color: #94a3b8;
