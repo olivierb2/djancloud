@@ -407,8 +407,9 @@ function renderTree(node, container, currentPath, depth, iconType) {
     const item = document.createElement('div');
     item.className = 'tree-item' + (isOnPath && hasChildren ? ' open' : '');
 
-    const row = document.createElement('div');
-    row.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none ' +
+    const row = document.createElement('a');
+    row.href = node.url_path ? '/browse/' + node.url_path : '/browse/';
+    row.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none no-underline ' +
         (isActive ? 'bg-brand-50 text-brand-700 font-medium' : 'text-gray-700 hover:bg-gray-100');
     row.style.paddingLeft = (depth * 12 + 8) + 'px';
 
@@ -442,9 +443,8 @@ function renderTree(node, container, currentPath, depth, iconType) {
     }
     row.appendChild(icon);
 
-    const label = document.createElement('a');
+    const label = document.createElement('span');
     label.className = 'truncate flex-1'; label.textContent = node.name;
-    label.href = node.url_path ? '/browse/' + node.url_path : '/browse/';
     row.appendChild(label);
 
     // Share button on root shared folders

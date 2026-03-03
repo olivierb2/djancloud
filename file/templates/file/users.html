@@ -140,8 +140,9 @@ function renderTree(node, container, currentPath, depth, iconType) {
     const item = document.createElement('div');
     item.className = 'tree-item';
 
-    const row = document.createElement('div');
-    row.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none text-gray-700 hover:bg-gray-100';
+    const row = document.createElement('a');
+    row.href = node.url_path ? '/browse/' + node.url_path : '/browse/';
+    row.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none no-underline text-gray-700 hover:bg-gray-100';
     row.style.paddingLeft = (depth * 12 + 8) + 'px';
 
     if (hasChildren) {
@@ -174,9 +175,8 @@ function renderTree(node, container, currentPath, depth, iconType) {
     }
     row.appendChild(icon);
 
-    const label = document.createElement('a');
+    const label = document.createElement('span');
     label.className = 'truncate flex-1'; label.textContent = node.name;
-    label.href = node.url_path ? '/browse/' + node.url_path : '/browse/';
     row.appendChild(label);
 
     item.appendChild(row);
