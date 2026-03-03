@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+[x-cloak] { display: none !important; }
+.tree-item > .tree-children { display: none; }
+.tree-item.open > .tree-children { display: block; }
+.tree-toggle { transition: transform 0.15s; }
+.tree-item.open > div > .tree-toggle,
+.tree-item.open > a > .tree-toggle { transform: rotate(90deg); }

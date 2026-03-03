@@ -1,4 +1,5 @@
 {% extends "file/base.html" %}
+{% load render_bundle from webpack_loader %}
 
 {% block title %}Users - Djancloud{% endblock %}
 
@@ -133,133 +134,8 @@
     </footer>
 </div>
 
-<script>
-// Sidebar folder tree (same as browse)
-function renderTree(node, container, currentPath, depth, iconType) {
-    const hasChildren = node.children && node.children.length > 0;
-    const item = document.createElement('div');
-    item.className = 'tree-item';
+{% endblock %}
 
-    const row = document.createElement('a');
-    row.href = node.url_path ? '/browse/' + node.url_path : '/browse/';
-    row.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none no-underline text-gray-700 hover:bg-gray-100';
-    row.style.paddingLeft = (depth * 12 + 8) + 'px';
-
-    if (hasChildren) {
-        const toggle = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        toggle.setAttribute('class', 'w-3 h-3 text-gray-400 tree-toggle flex-shrink-0');
-        toggle.setAttribute('fill', 'none'); toggle.setAttribute('stroke', 'currentColor'); toggle.setAttribute('viewBox', '0 0 24 24');
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-width', '2'); path.setAttribute('d', 'M9 5l7 7-7 7');
-        toggle.appendChild(path);
-        toggle.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); item.classList.toggle('open'); });
-        row.appendChild(toggle);
-    } else {
-        const spacer = document.createElement('span'); spacer.className = 'w-3 flex-shrink-0'; row.appendChild(spacer);
-    }
-
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    if (iconType === 'shared') {
-        icon.setAttribute('class', 'w-4 h-4 text-brand-500 flex-shrink-0');
-        icon.setAttribute('fill', 'none'); icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('viewBox', '0 0 24 24');
-        const ipath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        ipath.setAttribute('stroke-linecap', 'round'); ipath.setAttribute('stroke-linejoin', 'round'); ipath.setAttribute('stroke-width', '2');
-        ipath.setAttribute('d', 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z');
-        icon.appendChild(ipath);
-    } else {
-        icon.setAttribute('class', 'w-4 h-4 text-yellow-400 flex-shrink-0');
-        icon.setAttribute('fill', 'currentColor'); icon.setAttribute('viewBox', '0 0 24 24');
-        const ipath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        ipath.setAttribute('d', 'M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z');
-        icon.appendChild(ipath);
-    }
-    row.appendChild(icon);
-
-    const label = document.createElement('span');
-    label.className = 'truncate flex-1'; label.textContent = node.name;
-    row.appendChild(label);
-
-    item.appendChild(row);
-    if (hasChildren) {
-        const childContainer = document.createElement('div'); childContainer.className = 'tree-children';
-        node.children.forEach(c => renderTree(c, childContainer, '', depth + 1, 'folder'));
-        item.appendChild(childContainer);
-    }
-    container.appendChild(item);
-}
-
-fetch('/api/tree/').then(r => r.json()).then(data => {
-    const treeEl = document.getElementById('folder-tree');
-    treeEl.innerHTML = '';
-    if (data.tree) renderTree(data.tree, treeEl, '', 0, 'folder');
-
-    if (data.is_admin || (data.shared && data.shared.length > 0)) {
-        const headingRow = document.createElement('div');
-        headingRow.className = 'mt-4 mb-2 px-2 flex items-center justify-between';
-        const heading = document.createElement('h2');
-        heading.className = 'text-xs font-semibold uppercase tracking-wider text-gray-400';
-        heading.textContent = 'Shared';
-        headingRow.appendChild(heading);
-        treeEl.appendChild(headingRow);
-        if (data.shared) data.shared.forEach(s => renderTree(s, treeEl, '', 0, 'shared'));
-    }
-
-    if (data.is_admin) {
-        const configHeading = document.createElement('h2');
-        configHeading.className = 'mt-4 mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-gray-400';
-        configHeading.textContent = 'Configuration';
-        treeEl.appendChild(configHeading);
-
-        const usersLink = document.createElement('div');
-        usersLink.className = 'flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none bg-brand-50 text-brand-700 font-medium';
-        usersLink.style.paddingLeft = '20px';
-        usersLink.innerHTML =
-            '<svg class="w-4 h-4 text-brand-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>' +
-            '</svg>' +
-            '<span class="truncate">Users</span>';
-        treeEl.appendChild(usersLink);
-    }
-});
-
-// Delete user
-function deleteUser(userId, username) {
-    if (!confirm('Delete user "' + username + '"? All their files will be deleted.')) return;
-    fetch('/api/users/' + userId + '/', {
-        method: 'DELETE',
-        headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
-    }).then(r => r.json()).then(data => {
-        if (data.error) { alert(data.error); return; }
-        const row = document.querySelector('tr[data-user-id="' + userId + '"]');
-        if (row) row.remove();
-    });
-}
-
-// Add user
-document.getElementById('add-user-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const username = document.getElementById('new-user-username').value.trim();
-    const password = document.getElementById('new-user-password').value.trim();
-    const role = document.getElementById('new-user-role').value;
-    const errorEl = document.getElementById('add-user-error');
-    errorEl.classList.add('hidden');
-
-    fetch('/api/users/create/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-        },
-        body: JSON.stringify({username, password, role})
-    }).then(r => r.json()).then(data => {
-        if (data.error) {
-            errorEl.textContent = data.error;
-            errorEl.classList.remove('hidden');
-            return;
-        }
-        // Reload to show new user in server-rendered table
-        location.reload();
-    });
-});
-</script>
+{% block extra_js %}
+{% render_bundle 'users' 'js' %}
 {% endblock %}

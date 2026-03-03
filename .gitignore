@@ -3,3 +3,6 @@ uploads
 db.sqlite3
 **.pyc
 django.log
+node_modules
+file/static/file/bundles/
+file/static/file/webpack-stats.json
