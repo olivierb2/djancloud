@@ -6,3 +6,5 @@ lxml==5.4.0
 sqlparse==0.5.3
 channels==4.2.0
 daphne==4.2.0
+icalendar==6.0.1
+vobject==0.9.8

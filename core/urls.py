@@ -19,7 +19,27 @@ from django.urls import path, re_path, include
 
 from djangodav.acls import FullAcl
 from djangodav.locks import DummyLock
-from file.views import MyDavView, DavEntryView, RootView, StatusView, Login, LoginForm, LoginPoll, WebLoginView, WebLogoutView, FileBrowseView, SearchView, FileDownloadView, FileDeleteView, FolderDeleteView, MoveItemView, FolderSelectorView, RenameItemView, FilePreviewView, FolderTreeView, OcsUserView, OcsCapabilitiesView, SharedFolderCreateView, SharedFolderMembersView, SharedFolderMemberDeleteView, UserListView, UserCreateView, UserDeleteView, UserManagementView, FileEditorView, FileSaveView
+from file.views import (
+    MyDavView, DavEntryView, RootView, StatusView, Login, LoginForm, LoginPoll,
+    WebLoginView, WebLogoutView, FileBrowseView, SearchView, FileDownloadView,
+    FileDeleteView, FolderDeleteView, MoveItemView, FolderSelectorView,
+    RenameItemView, FilePreviewView, FolderTreeView, OcsUserView,
+    OcsCapabilitiesView, SharedFolderCreateView, SharedFolderMembersView,
+    SharedFolderMemberDeleteView, UserListView, UserCreateView, UserDeleteView,
+    UserManagementView, FileEditorView, FileSaveView,
+    CalendarWebView, CalendarCreateView, CalendarDeleteView,
+    CalendarShareAddView, CalendarShareDeleteView,
+    EventCreateView, EventDeleteView,
+    ContactsWebView, AddressBookCreateView, AddressBookDeleteView,
+    AddressBookShareAddView, AddressBookShareDeleteView,
+    ContactCreateView, ContactDeleteView,
+)
+from file.caldav_views import (
+    WellKnownCalDavView, WellKnownCardDavView,
+    DavRootView, PrincipalView,
+    CalendarListView, CalendarView, EventView,
+    AddressBookListView, AddressBookView, ContactView,
+)
 from django.conf import settings
 
 from django.urls import re_path
@@ -44,6 +64,33 @@ urlpatterns = [
     path('login/', WebLoginView.as_view(), name='login'),
     path('logout/', WebLogoutView.as_view(), name='logout'),
     path('status.php', StatusView.as_view()),
+
+    # Well-known CalDAV/CardDAV discovery
+    path('.well-known/caldav', WellKnownCalDavView.as_view()),
+    path('.well-known/carddav', WellKnownCardDavView.as_view()),
+
+    # DAV root (service discovery)
+    path('remote.php/dav/', DavRootView.as_view(), name='dav_root'),
+
+    # Principals
+    re_path(r'^remote\.php/dav/principals/users/(?P<username>[^/]+)/$',
+            PrincipalView.as_view(), name='dav_principal'),
+
+    # CalDAV - Calendars
+    re_path(r'^remote\.php/dav/calendars/(?P<username>[^/]+)/$',
+            CalendarListView.as_view(), name='caldav_calendar_list'),
+    re_path(r'^remote\.php/dav/calendars/(?P<username>[^/]+)/(?P<calendar_name>[^/]+)/$',
+            CalendarView.as_view(), name='caldav_calendar'),
+    re_path(r'^remote\.php/dav/calendars/(?P<username>[^/]+)/(?P<calendar_name>[^/]+)/(?P<event_filename>[^/]+)$',
+            EventView.as_view(), name='caldav_event'),
+
+    # CardDAV - Address Books
+    re_path(r'^remote\.php/dav/addressbooks/users/(?P<username>[^/]+)/$',
+            AddressBookListView.as_view(), name='carddav_addressbook_list'),
+    re_path(r'^remote\.php/dav/addressbooks/users/(?P<username>[^/]+)/(?P<addressbook_name>[^/]+)/$',
+            AddressBookView.as_view(), name='carddav_addressbook'),
+    re_path(r'^remote\.php/dav/addressbooks/users/(?P<username>[^/]+)/(?P<addressbook_name>[^/]+)/(?P<contact_filename>[^/]+)$',
+            ContactView.as_view(), name='carddav_contact'),
     path('index.php/login/v2', Login.as_view()),
     path('index.php/login/v2/flow/<str:token>', LoginForm.as_view()),
     path('index.php/login/v2/poll', LoginPoll.as_view()),
@@ -75,4 +122,22 @@ urlpatterns = [
     path('api/users/', UserListView.as_view(), name='api_users'),
     path('api/users/create/', UserCreateView.as_view(), name='api_user_create'),
     path('api/users/<int:user_id>/', UserDeleteView.as_view(), name='api_user_delete'),
+
+    # Calendar web UI
+    path('calendars/', CalendarWebView.as_view(), name='calendars'),
+    path('calendars/create/', CalendarCreateView.as_view(), name='calendar_create'),
+    path('calendars/<int:calendar_id>/delete/', CalendarDeleteView.as_view(), name='calendar_delete'),
+    path('calendars/<int:calendar_id>/share/', CalendarShareAddView.as_view(), name='calendar_share_add'),
+    path('calendars/<int:calendar_id>/share/<int:user_id>/delete/', CalendarShareDeleteView.as_view(), name='calendar_share_delete'),
+    path('calendars/<int:calendar_id>/events/create/', EventCreateView.as_view(), name='event_create'),
+    path('events/<int:event_id>/delete/', EventDeleteView.as_view(), name='event_delete'),
+
+    # Contacts web UI
+    path('contacts/', ContactsWebView.as_view(), name='contacts'),
+    path('contacts/addressbooks/create/', AddressBookCreateView.as_view(), name='addressbook_create'),
+    path('contacts/addressbooks/<int:addressbook_id>/delete/', AddressBookDeleteView.as_view(), name='addressbook_delete'),
+    path('contacts/addressbooks/<int:addressbook_id>/share/', AddressBookShareAddView.as_view(), name='addressbook_share_add'),
+    path('contacts/addressbooks/<int:addressbook_id>/share/<int:user_id>/delete/', AddressBookShareDeleteView.as_view(), name='addressbook_share_delete'),
+    path('contacts/<int:addressbook_id>/contacts/create/', ContactCreateView.as_view(), name='contact_create'),
+    path('contacts/contact/<int:contact_id>/delete/', ContactDeleteView.as_view(), name='contact_delete'),
 ]

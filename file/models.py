@@ -174,3 +174,199 @@ class SharedFolderMembership(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.shared_folder.name} ({self.permission})"
+
+
+# CalDAV Models
+
+class Calendar(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='calendars')
+    name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    timezone = models.CharField(max_length=100, default='UTC')
+    color = models.CharField(max_length=9, default='#3498db')  # Hex color with #
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    sync_token = models.CharField(max_length=128, unique=True, db_index=True, editable=False)
+
+    class Meta:
+        unique_together = [('owner', 'name')]
+        indexes = [
+            models.Index(fields=['owner', 'name'], name='calendar_owner_name_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.sync_token:
+            self.sync_token = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
+
+    def update_sync_token(self):
+        """Generate new sync token when calendar content changes"""
+        self.sync_token = secrets.token_urlsafe(32)
+        self.save(update_fields=['sync_token', 'updated_at'])
+
+    def __str__(self):
+        return f"{self.owner.username}/{self.display_name}"
+
+
+class CalendarShare(models.Model):
+    PERMISSION_CHOICES = [
+        ('read', 'Read only'),
+        ('write', 'Read & Write'),
+        ('admin', 'Admin'),
+    ]
+
+    calendar = models.ForeignKey(
+        Calendar, on_delete=models.CASCADE, related_name='shares')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='shared_calendars')
+    permission = models.CharField(max_length=10, choices=PERMISSION_CHOICES, default='read')
+    shared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('calendar', 'user')]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.calendar.display_name} ({self.permission})"
+
+
+class Event(models.Model):
+    calendar = models.ForeignKey(
+        Calendar, on_delete=models.CASCADE, related_name='events')
+    uid = models.CharField(max_length=255, db_index=True)  # iCalendar UID
+    ical_data = models.TextField()  # Full iCalendar data (VEVENT component)
+
+    # Extracted fields for querying (from iCalendar data)
+    summary = models.CharField(max_length=500, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    location = models.CharField(max_length=500, blank=True, null=True)
+    dtstart = models.DateTimeField(db_index=True, null=True, blank=True)
+    dtend = models.DateTimeField(null=True, blank=True)
+    all_day = models.BooleanField(default=False)
+
+    # Recurrence
+    recurrence_rule = models.TextField(blank=True, null=True)  # RRULE
+
+    # Metadata
+    etag = models.CharField(max_length=64, db_index=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('calendar', 'uid')]
+        indexes = [
+            models.Index(fields=['calendar', 'dtstart'], name='event_calendar_start_idx'),
+            models.Index(fields=['calendar', 'uid'], name='event_calendar_uid_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.etag:
+            import hashlib
+            self.etag = hashlib.md5(f"{self.uid}-{timezone.now().timestamp()}".encode()).hexdigest()
+        super().save(*args, **kwargs)
+        # Update parent calendar sync token
+        self.calendar.update_sync_token()
+
+    def delete(self, *args, **kwargs):
+        calendar = self.calendar
+        super().delete(*args, **kwargs)
+        calendar.update_sync_token()
+
+    def __str__(self):
+        return f"{self.calendar.owner.username}/{self.calendar.name}/{self.summary or self.uid}"
+
+
+# CardDAV Models
+
+class AddressBook(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='addressbooks')
+    name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    sync_token = models.CharField(max_length=128, unique=True, db_index=True, editable=False)
+
+    class Meta:
+        unique_together = [('owner', 'name')]
+        indexes = [
+            models.Index(fields=['owner', 'name'], name='addressbook_owner_name_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.sync_token:
+            self.sync_token = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
+
+    def update_sync_token(self):
+        """Generate new sync token when addressbook content changes"""
+        self.sync_token = secrets.token_urlsafe(32)
+        self.save(update_fields=['sync_token', 'updated_at'])
+
+    def __str__(self):
+        return f"{self.owner.username}/{self.display_name}"
+
+
+class AddressBookShare(models.Model):
+    PERMISSION_CHOICES = [
+        ('read', 'Read only'),
+        ('write', 'Read & Write'),
+        ('admin', 'Admin'),
+    ]
+
+    addressbook = models.ForeignKey(
+        AddressBook, on_delete=models.CASCADE, related_name='shares')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='shared_addressbooks')
+    permission = models.CharField(max_length=10, choices=PERMISSION_CHOICES, default='read')
+    shared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('addressbook', 'user')]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.addressbook.display_name} ({self.permission})"
+
+
+class Contact(models.Model):
+    addressbook = models.ForeignKey(
+        AddressBook, on_delete=models.CASCADE, related_name='contacts')
+    uid = models.CharField(max_length=255, db_index=True)  # vCard UID
+    vcard_data = models.TextField()  # Full vCard data
+
+    # Extracted fields for querying (from vCard data)
+    fn = models.CharField(max_length=500, blank=True, null=True)  # Formatted Name (FN)
+    n = models.CharField(max_length=500, blank=True, null=True)  # Structured Name (N)
+    email = models.CharField(max_length=255, blank=True, null=True)  # Primary email
+    tel = models.CharField(max_length=100, blank=True, null=True)  # Primary telephone
+    org = models.CharField(max_length=255, blank=True, null=True)  # Organization
+
+    # Metadata
+    etag = models.CharField(max_length=64, db_index=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('addressbook', 'uid')]
+        indexes = [
+            models.Index(fields=['addressbook', 'fn'], name='contact_addressbook_fn_idx'),
+            models.Index(fields=['addressbook', 'uid'], name='contact_addressbook_uid_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.etag:
+            import hashlib
+            self.etag = hashlib.md5(f"{self.uid}-{timezone.now().timestamp()}".encode()).hexdigest()
+        super().save(*args, **kwargs)
+        # Update parent addressbook sync token
+        self.addressbook.update_sync_token()
+
+    def delete(self, *args, **kwargs):
+        addressbook = self.addressbook
+        super().delete(*args, **kwargs)
+        addressbook.update_sync_token()
+
+    def __str__(self):
+        return f"{self.addressbook.owner.username}/{self.addressbook.name}/{self.fn or self.uid}"

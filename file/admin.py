@@ -40,8 +40,46 @@ class CustomUserAdmin(UserAdmin):
     list_display = UserAdmin.list_display + ('role',)
 
 
+class CalendarShareInline(admin.TabularInline):
+    model = models.CalendarShare
+    extra = 1
+
+
+class CalendarAdmin(admin.ModelAdmin):
+    list_display = ('owner', 'name', 'display_name', 'color', 'created_at')
+    list_filter = ('owner',)
+    inlines = [CalendarShareInline]
+
+
+class EventAdmin(admin.ModelAdmin):
+    list_display = ('uid', 'summary', 'calendar', 'dtstart', 'dtend', 'all_day')
+    list_filter = ('calendar', 'all_day')
+    search_fields = ('uid', 'summary', 'description')
+
+
+class AddressBookShareInline(admin.TabularInline):
+    model = models.AddressBookShare
+    extra = 1
+
+
+class AddressBookAdmin(admin.ModelAdmin):
+    list_display = ('owner', 'name', 'display_name', 'created_at')
+    list_filter = ('owner',)
+    inlines = [AddressBookShareInline]
+
+
+class ContactAdmin(admin.ModelAdmin):
+    list_display = ('uid', 'fn', 'email', 'tel', 'addressbook')
+    list_filter = ('addressbook',)
+    search_fields = ('uid', 'fn', 'email', 'tel')
+
+
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(models.File, FileAdmin)
 admin.site.register(models.Folder, FolderAdmin)
 admin.site.register(models.AppToken, AppTokenAdmin)
 admin.site.register(models.SharedFolder, SharedFolderAdmin)
+admin.site.register(models.Calendar, CalendarAdmin)
+admin.site.register(models.Event, EventAdmin)
+admin.site.register(models.AddressBook, AddressBookAdmin)
+admin.site.register(models.Contact, ContactAdmin)

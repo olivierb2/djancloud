@@ -7,16 +7,12 @@
 <div class="flex h-full min-h-screen flex-col">
 
     <!-- Navbar -->
-    <nav class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
+    {% include "file/_navbar.html" with active_nav='files' %}
+
+    <!-- Sub-bar: search + breadcrumb -->
+    <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
         <div class="flex items-center gap-3">
-            <a href="{% url 'browse_files_root' %}" class="flex items-center gap-2 text-brand-600 font-bold text-lg">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                </svg>
-                Djancloud
-            </a>
-            <div class="relative ml-4">
+            <div class="relative">
                 <input type="text" id="search-input" placeholder="Search files and folders..."
                        class="w-64 rounded-lg border border-gray-300 pl-9 pr-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
                 <svg class="w-4 h-4 absolute left-3 top-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -39,15 +35,7 @@
                 {% endfor %}
             {% endif %}
         </div>
-
-        <div class="flex items-center gap-3">
-            <span class="text-sm text-gray-500">{{ user.username }}</span>
-            <a href="{% url 'logout' %}"
-               class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-                Logout
-            </a>
-        </div>
-    </nav>
+    </div>
 
     <div class="flex flex-1 overflow-hidden">
 

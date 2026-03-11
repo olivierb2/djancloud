@@ -12,7 +12,11 @@ import json
 import secrets
 import os
 from django.contrib.auth.mixins import LoginRequiredMixin
-from .models import User, AppToken, LoginToken, Folder, File, SharedFolder, SharedFolderMembership
+from .models import (
+    User, AppToken, LoginToken, Folder, File, SharedFolder, SharedFolderMembership,
+    Calendar, CalendarShare, Event,
+    AddressBook, AddressBookShare, Contact,
+)
 from django.views import View
 from djangodav.views.views import DavView
 from django.views.decorators.csrf import csrf_exempt
@@ -401,6 +405,8 @@ class OcsCapabilitiesView(BasicAuthMixin, View):
                         },
                         "dav": {
                             "chunking": "1.0",
+                            "calendars": True,
+                            "contacts": True,
                         },
                         "files": {
                             "bigfilechunking": True,
@@ -1461,3 +1467,368 @@ class FileSaveView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"Error saving file {file_id}: {e}")
             return JsonResponse({'error': 'Failed to save file'}, status=500)
+
+
+# ─── Calendar Web Views ──────────────────────────────────────
+
+class CalendarWebView(LoginRequiredMixin, View):
+    def get(self, request):
+        from .caldav_views import ensure_defaults_for_user
+        ensure_defaults_for_user(request.user)
+
+        own_calendars = list(Calendar.objects.filter(owner=request.user).order_by('display_name'))
+        shared_ids = CalendarShare.objects.filter(user=request.user).values_list('calendar_id', flat=True)
+        shared_calendars = list(Calendar.objects.filter(id__in=shared_ids).select_related('owner').order_by('display_name'))
+
+        selected_calendar = None
+        events = []
+        shares = []
+        can_write = False
+
+        cal_id = request.GET.get('calendar')
+        if cal_id:
+            try:
+                selected_calendar = Calendar.objects.select_related('owner').get(id=cal_id)
+                is_owner = selected_calendar.owner_id == request.user.id
+                if not is_owner:
+                    share = CalendarShare.objects.filter(calendar=selected_calendar, user=request.user).first()
+                    if not share:
+                        raise Calendar.DoesNotExist
+                    can_write = share.permission in ('write', 'admin')
+                else:
+                    can_write = True
+                events = selected_calendar.events.order_by('-dtstart')
+                if is_owner:
+                    shares = selected_calendar.shares.select_related('user').all()
+            except Calendar.DoesNotExist:
+                selected_calendar = None
+
+        return render(request, 'file/calendars.html', {
+            'calendars': own_calendars,
+            'shared_calendars': shared_calendars,
+            'selected_calendar': selected_calendar,
+            'events': events,
+            'shares': shares,
+            'can_write': can_write,
+        })
+
+
+class CalendarCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        display_name = request.POST.get('display_name', '').strip()
+        if not display_name:
+            messages.error(request, 'Calendar name is required.')
+            return redirect('calendars')
+        name = display_name.lower().replace(' ', '-')
+        # Ensure unique name
+        base_name = name
+        counter = 1
+        while Calendar.objects.filter(owner=request.user, name=name).exists():
+            name = f"{base_name}-{counter}"
+            counter += 1
+        Calendar.objects.create(
+            owner=request.user,
+            name=name,
+            display_name=display_name,
+            description=request.POST.get('description', '').strip() or None,
+            color=request.POST.get('color', '#0082c9'),
+        )
+        messages.success(request, f'Calendar "{display_name}" created.')
+        return redirect('calendars')
+
+
+class CalendarDeleteView(LoginRequiredMixin, View):
+    def post(self, request, calendar_id):
+        cal = get_object_or_404(Calendar, id=calendar_id, owner=request.user)
+        name = cal.display_name
+        cal.delete()
+        messages.success(request, f'Calendar "{name}" deleted.')
+        return redirect('calendars')
+
+
+class CalendarShareAddView(LoginRequiredMixin, View):
+    def post(self, request, calendar_id):
+        cal = get_object_or_404(Calendar, id=calendar_id, owner=request.user)
+        username = request.POST.get('username', '').strip()
+        permission = request.POST.get('permission', 'read')
+        try:
+            target_user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            messages.error(request, f'User "{username}" not found.')
+            return redirect(f'/calendars/?calendar={calendar_id}')
+        if target_user == request.user:
+            messages.error(request, 'Cannot share with yourself.')
+            return redirect(f'/calendars/?calendar={calendar_id}')
+        CalendarShare.objects.update_or_create(
+            calendar=cal, user=target_user,
+            defaults={'permission': permission},
+        )
+        messages.success(request, f'Shared with {username}.')
+        return redirect(f'/calendars/?calendar={calendar_id}')
+
+
+class CalendarShareDeleteView(LoginRequiredMixin, View):
+    def post(self, request, calendar_id, user_id):
+        cal = get_object_or_404(Calendar, id=calendar_id, owner=request.user)
+        CalendarShare.objects.filter(calendar=cal, user_id=user_id).delete()
+        messages.success(request, 'Share removed.')
+        return redirect(f'/calendars/?calendar={calendar_id}')
+
+
+class EventCreateView(LoginRequiredMixin, View):
+    def post(self, request, calendar_id):
+        cal = get_object_or_404(Calendar, id=calendar_id)
+        # Check access
+        is_owner = cal.owner_id == request.user.id
+        if not is_owner:
+            share = CalendarShare.objects.filter(calendar=cal, user=request.user, permission__in=['write', 'admin']).first()
+            if not share:
+                raise Http404
+
+        import uuid
+        from datetime import datetime as dt
+        summary = request.POST.get('summary', '').strip()
+        description = request.POST.get('description', '').strip() or None
+        location = request.POST.get('location', '').strip() or None
+        all_day = 'all_day' in request.POST
+        dtstart_str = request.POST.get('dtstart', '')
+        dtend_str = request.POST.get('dtend', '')
+
+        try:
+            if all_day:
+                dtstart = dt.strptime(dtstart_str, '%Y-%m-%d')
+                dtend = dt.strptime(dtend_str, '%Y-%m-%d') if dtend_str else None
+            else:
+                dtstart = dt.strptime(dtstart_str, '%Y-%m-%dT%H:%M')
+                dtend = dt.strptime(dtend_str, '%Y-%m-%dT%H:%M') if dtend_str else None
+        except (ValueError, TypeError):
+            messages.error(request, 'Invalid date format.')
+            return redirect(f'/calendars/?calendar={calendar_id}')
+
+        uid = str(uuid.uuid4())
+        # Generate iCal data
+        lines = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//Djancloud//CalDAV//EN',
+            'BEGIN:VEVENT',
+            f'UID:{uid}',
+            f'SUMMARY:{summary}',
+        ]
+        if description:
+            lines.append(f'DESCRIPTION:{description}')
+        if location:
+            lines.append(f'LOCATION:{location}')
+        if all_day:
+            lines.append(f'DTSTART;VALUE=DATE:{dtstart.strftime("%Y%m%d")}')
+            if dtend:
+                lines.append(f'DTEND;VALUE=DATE:{dtend.strftime("%Y%m%d")}')
+        else:
+            lines.append(f'DTSTART:{dtstart.strftime("%Y%m%dT%H%M%S")}')
+            if dtend:
+                lines.append(f'DTEND:{dtend.strftime("%Y%m%dT%H%M%S")}')
+        lines.extend(['END:VEVENT', 'END:VCALENDAR'])
+        ical_data = '\r\n'.join(lines)
+
+        from django.utils import timezone as tz
+        if dtstart.tzinfo is None:
+            from datetime import timezone as dt_tz
+            dtstart = dtstart.replace(tzinfo=dt_tz.utc)
+        if dtend and dtend.tzinfo is None:
+            from datetime import timezone as dt_tz
+            dtend = dtend.replace(tzinfo=dt_tz.utc)
+
+        Event.objects.create(
+            calendar=cal,
+            uid=uid,
+            ical_data=ical_data,
+            summary=summary,
+            description=description,
+            location=location,
+            dtstart=dtstart,
+            dtend=dtend,
+            all_day=all_day,
+        )
+        messages.success(request, f'Event "{summary}" created.')
+        return redirect(f'/calendars/?calendar={calendar_id}')
+
+
+class EventDeleteView(LoginRequiredMixin, View):
+    def post(self, request, event_id):
+        event = get_object_or_404(Event, id=event_id)
+        cal = event.calendar
+        is_owner = cal.owner_id == request.user.id
+        if not is_owner:
+            share = CalendarShare.objects.filter(calendar=cal, user=request.user, permission__in=['write', 'admin']).first()
+            if not share:
+                raise Http404
+        event.delete()
+        messages.success(request, 'Event deleted.')
+        return redirect(f'/calendars/?calendar={cal.id}')
+
+
+# ─── Contacts Web Views ──────────────────────────────────────
+
+class ContactsWebView(LoginRequiredMixin, View):
+    def get(self, request):
+        from .caldav_views import ensure_defaults_for_user
+        ensure_defaults_for_user(request.user)
+
+        own_addressbooks = list(AddressBook.objects.filter(owner=request.user).order_by('display_name'))
+        shared_ids = AddressBookShare.objects.filter(user=request.user).values_list('addressbook_id', flat=True)
+        shared_addressbooks = list(AddressBook.objects.filter(id__in=shared_ids).select_related('owner').order_by('display_name'))
+
+        selected_addressbook = None
+        contacts = []
+        shares = []
+        can_write = False
+
+        ab_id = request.GET.get('addressbook')
+        if ab_id:
+            try:
+                selected_addressbook = AddressBook.objects.select_related('owner').get(id=ab_id)
+                is_owner = selected_addressbook.owner_id == request.user.id
+                if not is_owner:
+                    share = AddressBookShare.objects.filter(addressbook=selected_addressbook, user=request.user).first()
+                    if not share:
+                        raise AddressBook.DoesNotExist
+                    can_write = share.permission in ('write', 'admin')
+                else:
+                    can_write = True
+                contacts = selected_addressbook.contacts.order_by('fn')
+                if is_owner:
+                    shares = selected_addressbook.shares.select_related('user').all()
+            except AddressBook.DoesNotExist:
+                selected_addressbook = None
+
+        return render(request, 'file/contacts.html', {
+            'addressbooks': own_addressbooks,
+            'shared_addressbooks': shared_addressbooks,
+            'selected_addressbook': selected_addressbook,
+            'contacts': contacts,
+            'shares': shares,
+            'can_write': can_write,
+        })
+
+
+class AddressBookCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        display_name = request.POST.get('display_name', '').strip()
+        if not display_name:
+            messages.error(request, 'Address book name is required.')
+            return redirect('contacts')
+        name = display_name.lower().replace(' ', '-')
+        base_name = name
+        counter = 1
+        while AddressBook.objects.filter(owner=request.user, name=name).exists():
+            name = f"{base_name}-{counter}"
+            counter += 1
+        AddressBook.objects.create(
+            owner=request.user,
+            name=name,
+            display_name=display_name,
+            description=request.POST.get('description', '').strip() or None,
+        )
+        messages.success(request, f'Address book "{display_name}" created.')
+        return redirect('contacts')
+
+
+class AddressBookDeleteView(LoginRequiredMixin, View):
+    def post(self, request, addressbook_id):
+        ab = get_object_or_404(AddressBook, id=addressbook_id, owner=request.user)
+        name = ab.display_name
+        ab.delete()
+        messages.success(request, f'Address book "{name}" deleted.')
+        return redirect('contacts')
+
+
+class AddressBookShareAddView(LoginRequiredMixin, View):
+    def post(self, request, addressbook_id):
+        ab = get_object_or_404(AddressBook, id=addressbook_id, owner=request.user)
+        username = request.POST.get('username', '').strip()
+        permission = request.POST.get('permission', 'read')
+        try:
+            target_user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            messages.error(request, f'User "{username}" not found.')
+            return redirect(f'/contacts/?addressbook={addressbook_id}')
+        if target_user == request.user:
+            messages.error(request, 'Cannot share with yourself.')
+            return redirect(f'/contacts/?addressbook={addressbook_id}')
+        AddressBookShare.objects.update_or_create(
+            addressbook=ab, user=target_user,
+            defaults={'permission': permission},
+        )
+        messages.success(request, f'Shared with {username}.')
+        return redirect(f'/contacts/?addressbook={addressbook_id}')
+
+
+class AddressBookShareDeleteView(LoginRequiredMixin, View):
+    def post(self, request, addressbook_id, user_id):
+        ab = get_object_or_404(AddressBook, id=addressbook_id, owner=request.user)
+        AddressBookShare.objects.filter(addressbook=ab, user_id=user_id).delete()
+        messages.success(request, 'Share removed.')
+        return redirect(f'/contacts/?addressbook={addressbook_id}')
+
+
+class ContactCreateView(LoginRequiredMixin, View):
+    def post(self, request, addressbook_id):
+        ab = get_object_or_404(AddressBook, id=addressbook_id)
+        is_owner = ab.owner_id == request.user.id
+        if not is_owner:
+            share = AddressBookShare.objects.filter(addressbook=ab, user=request.user, permission__in=['write', 'admin']).first()
+            if not share:
+                raise Http404
+
+        import uuid
+        fn = request.POST.get('fn', '').strip()
+        email = request.POST.get('email', '').strip() or None
+        tel = request.POST.get('tel', '').strip() or None
+        org = request.POST.get('org', '').strip() or None
+
+        if not fn:
+            messages.error(request, 'Name is required.')
+            return redirect(f'/contacts/?addressbook={addressbook_id}')
+
+        uid = str(uuid.uuid4())
+        lines = [
+            'BEGIN:VCARD',
+            'VERSION:3.0',
+            f'UID:{uid}',
+            f'FN:{fn}',
+            f'N:{fn};;;;',
+        ]
+        if email:
+            lines.append(f'EMAIL:{email}')
+        if tel:
+            lines.append(f'TEL:{tel}')
+        if org:
+            lines.append(f'ORG:{org}')
+        lines.append('END:VCARD')
+        vcard_data = '\r\n'.join(lines)
+
+        Contact.objects.create(
+            addressbook=ab,
+            uid=uid,
+            vcard_data=vcard_data,
+            fn=fn,
+            email=email,
+            tel=tel,
+            org=org,
+        )
+        messages.success(request, f'Contact "{fn}" created.')
+        return redirect(f'/contacts/?addressbook={addressbook_id}')
+
+
+class ContactDeleteView(LoginRequiredMixin, View):
+    def post(self, request, contact_id):
+        contact = get_object_or_404(Contact, id=contact_id)
+        ab = contact.addressbook
+        is_owner = ab.owner_id == request.user.id
+        if not is_owner:
+            share = AddressBookShare.objects.filter(addressbook=ab, user=request.user, permission__in=['write', 'admin']).first()
+            if not share:
+                raise Http404
+        contact.delete()
+        messages.success(request, 'Contact deleted.')
+        return redirect(f'/contacts/?addressbook={ab.id}')
