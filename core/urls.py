@@ -32,7 +32,7 @@ from file.views import (
     EventCreateView, EventDeleteView, CalendarEventsApiView,
     ContactsWebView, AddressBookCreateView, AddressBookDeleteView,
     AddressBookShareAddView, AddressBookShareDeleteView,
-    ContactCreateView, ContactDeleteView,
+    ContactCreateView, ContactDeleteView, ContactUpdateView,
     MailWebView, MailboxCreateView, MailboxRenameView, MailboxDeleteView,
     EmailDeleteView, EmailMoveView, TrashEmptyView, EmailAttachmentDownloadView,
     MailComposeView, MailSendView, ContactSearchView, FilePickerView,
@@ -147,6 +147,7 @@ urlpatterns = [
     path('contacts/addressbooks/<int:addressbook_id>/share/<int:user_id>/delete/', AddressBookShareDeleteView.as_view(), name='addressbook_share_delete'),
     path('contacts/<int:addressbook_id>/contacts/create/', ContactCreateView.as_view(), name='contact_create'),
     path('contacts/contact/<int:contact_id>/delete/', ContactDeleteView.as_view(), name='contact_delete'),
+    path('contacts/contact/<int:contact_id>/update/', ContactUpdateView.as_view(), name='contact_update'),
 
     # Mail web UI
     path('mail/', MailWebView.as_view(), name='mail'),

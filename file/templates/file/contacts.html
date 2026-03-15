@@ -146,16 +146,25 @@
                             </td>
                             <td class="px-4 py-2.5 text-right">
                                 {% if can_write %}
-                                <form method="post" action="{% url 'contact_delete' contact_id=contact.id %}" class="inline"
-                                      onsubmit="return confirm('Delete contact \'{{ contact.fn|default:"this contact"|escapejs }}\'?')">
-                                    {% csrf_token %}
-                                    <button type="submit" title="Delete"
-                                            class="rounded p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div class="inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button type="button" title="Edit"
+                                            onclick="openEditContact({{ contact.id }}, '{{ contact.fn|default:""|escapejs }}', '{{ contact.email|default:""|escapejs }}', '{{ contact.tel|default:""|escapejs }}', '{{ contact.org|default:""|escapejs }}')"
+                                            class="rounded p-1 text-gray-400 hover:text-brand-600 hover:bg-brand-50">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                         </svg>
                                     </button>
-                                </form>
+                                    <form method="post" action="{% url 'contact_delete' contact_id=contact.id %}" class="inline"
+                                          onsubmit="return confirm('Delete contact \'{{ contact.fn|default:"this contact"|escapejs }}\'?')">
+                                        {% csrf_token %}
+                                        <button type="submit" title="Delete"
+                                                class="rounded p-1 text-gray-400 hover:text-red-600 hover:bg-red-50">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                            </svg>
+                                        </button>
+                                    </form>
+                                </div>
                                 {% endif %}
                             </td>
                         </tr>
@@ -241,6 +250,31 @@
         </form>
     </div>
 </div>
+<!-- Edit Contact modal -->
+<div id="edit-contact-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Edit contact</h3>
+        <form id="edit-contact-form" method="post">
+            {% csrf_token %}
+            <div class="space-y-3">
+                <input type="text" name="fn" id="edit-contact-fn" required maxlength="500" placeholder="Full name"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                <input type="email" name="email" id="edit-contact-email" maxlength="255" placeholder="Email (optional)"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                <input type="tel" name="tel" id="edit-contact-tel" maxlength="100" placeholder="Phone (optional)"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                <input type="text" name="org" id="edit-contact-org" maxlength="255" placeholder="Organization (optional)"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeModal('edit-contact-modal')"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endif %}
 
 {% if selected_addressbook and selected_addressbook.owner == user %}
@@ -304,5 +338,13 @@ document.querySelectorAll('[id$="-modal"]').forEach(modal => {
         if (e.target === modal) closeModal(modal.id);
     });
 });
+function openEditContact(contactId, fn, email, tel, org) {
+    document.getElementById('edit-contact-form').action = '/contacts/contact/' + contactId + '/update/';
+    document.getElementById('edit-contact-fn').value = fn;
+    document.getElementById('edit-contact-email').value = email;
+    document.getElementById('edit-contact-tel').value = tel;
+    document.getElementById('edit-contact-org').value = org;
+    openModal('edit-contact-modal');
+}
 </script>
 {% endblock %}

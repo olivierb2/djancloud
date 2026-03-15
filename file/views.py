@@ -1547,6 +1547,8 @@ class CalendarWebView(LoginRequiredMixin, View):
         can_write = False
 
         cal_id = request.GET.get('calendar')
+        if not cal_id and own_calendars:
+            cal_id = own_calendars[0].id
         if cal_id:
             try:
                 selected_calendar = Calendar.objects.select_related('owner').get(id=cal_id)
@@ -1793,6 +1795,8 @@ class ContactsWebView(LoginRequiredMixin, View):
         can_write = False
 
         ab_id = request.GET.get('addressbook')
+        if not ab_id and own_addressbooks:
+            ab_id = own_addressbooks[0].id
         if ab_id:
             try:
                 selected_addressbook = AddressBook.objects.select_related('owner').get(id=ab_id)
@@ -1940,6 +1944,56 @@ class ContactDeleteView(LoginRequiredMixin, View):
                 raise Http404
         contact.delete()
         messages.success(request, 'Contact deleted.')
+        return redirect(f'/contacts/?addressbook={ab.id}')
+
+
+class ContactUpdateView(LoginRequiredMixin, View):
+    def post(self, request, contact_id):
+        contact = get_object_or_404(Contact, id=contact_id)
+        ab = contact.addressbook
+        is_owner = ab.owner_id == request.user.id
+        if not is_owner:
+            share = AddressBookShare.objects.filter(
+                addressbook=ab, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                raise Http404
+
+        fn = request.POST.get('fn', '').strip()
+        email = request.POST.get('email', '').strip() or None
+        tel = request.POST.get('tel', '').strip() or None
+        org = request.POST.get('org', '').strip() or None
+
+        if not fn:
+            messages.error(request, 'Name is required.')
+            return redirect(f'/contacts/?addressbook={ab.id}')
+
+        # Rebuild vCard
+        lines = [
+            'BEGIN:VCARD',
+            'VERSION:3.0',
+            f'UID:{contact.uid}',
+            f'FN:{fn}',
+            f'N:{fn};;;;',
+        ]
+        if email:
+            lines.append(f'EMAIL:{email}')
+        if tel:
+            lines.append(f'TEL:{tel}')
+        if org:
+            lines.append(f'ORG:{org}')
+        lines.append('END:VCARD')
+
+        contact.vcard_data = '\r\n'.join(lines)
+        contact.fn = fn
+        contact.email = email
+        contact.tel = tel
+        contact.org = org
+        contact.save()
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'ok': True})
+        messages.success(request, f'Contact "{fn}" updated.')
         return redirect(f'/contacts/?addressbook={ab.id}')
 
 
