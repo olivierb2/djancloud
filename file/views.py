@@ -2081,6 +2081,92 @@ def _get_sorted_mailboxes(user):
     return mailboxes
 
 
+def _build_mailbox_tree(mailboxes, selected_name):
+    """Build a tree structure from flat mailbox list using '/' as separator.
+
+    Returns a list of tree nodes:
+    [{ 'mailbox': Mailbox, 'label': str, 'children': [...], 'selected': bool, 'on_path': bool }]
+    """
+    from .models import SYSTEM_MAILBOXES
+
+    # System mailboxes are always top-level
+    system = []
+    system_map = {}  # name -> node
+    custom = []
+    for mb in mailboxes:
+        if mb.name in SYSTEM_MAILBOXES:
+            on_path = selected_name and (selected_name == mb.name or selected_name.startswith(mb.name + '/'))
+            node = {
+                'mailbox': mb,
+                'label': mb.name,
+                'full_name': mb.name,
+                'children': [],
+                'selected': mb.name == selected_name,
+                'on_path': on_path,
+            }
+            system.append(node)
+            system_map[mb.name] = node
+        else:
+            custom.append(mb)
+
+    # Build tree from custom mailboxes using '/' separator
+    root_nodes = []
+    node_map = dict(system_map)  # Include system nodes so children attach to them
+
+    for mb in sorted(custom, key=lambda m: m.name.lower()):
+        parts = mb.name.split('/')
+        # Ensure parent nodes exist
+        for i in range(len(parts) - 1):
+            parent_path = '/'.join(parts[:i + 1])
+            if parent_path not in node_map:
+                # Virtual parent node (no real mailbox)
+                node_map[parent_path] = {
+                    'mailbox': None,
+                    'label': parts[i],
+                    'full_name': parent_path,
+                    'children': [],
+                    'selected': False,
+                    'on_path': selected_name and selected_name.startswith(parent_path + '/'),
+                }
+                if i == 0:
+                    root_nodes.append(node_map[parent_path])
+                else:
+                    gp_path = '/'.join(parts[:i])
+                    node_map[gp_path]['children'].append(node_map[parent_path])
+
+        full_name = mb.name
+        is_selected = full_name == selected_name
+        on_path = selected_name and (selected_name == full_name or selected_name.startswith(full_name + '/'))
+        node = {
+            'mailbox': mb,
+            'label': parts[-1],
+            'full_name': full_name,
+            'children': node_map[full_name]['children'] if full_name in node_map else [],
+            'selected': is_selected,
+            'on_path': on_path,
+        }
+        node_map[full_name] = node
+
+        if len(parts) == 1:
+            # Check if already added as virtual parent
+            existing = next((n for n in root_nodes if n['full_name'] == full_name), None)
+            if existing:
+                existing['mailbox'] = mb
+                existing['selected'] = is_selected
+                existing['on_path'] = on_path
+            else:
+                root_nodes.append(node)
+        else:
+            parent_path = '/'.join(parts[:-1])
+            if parent_path in node_map:
+                # Only add if not already a child
+                existing_child = next((c for c in node_map[parent_path]['children'] if c['full_name'] == full_name), None)
+                if not existing_child:
+                    node_map[parent_path]['children'].append(node)
+
+    return system + root_nodes
+
+
 class MailWebView(LoginRequiredMixin, View):
     def get(self, request):
         Mailbox.ensure_defaults(request.user)
@@ -2110,8 +2196,11 @@ class MailWebView(LoginRequiredMixin, View):
         for mb in mailboxes:
             mb.unread_count = unread_counts.get(mb.id, 0)
 
+        mailbox_tree = _build_mailbox_tree(mailboxes, mailbox_name)
+
         return render(request, 'file/mail.html', {
             'mailboxes': mailboxes,
+            'mailbox_tree': mailbox_tree,
             'selected_mailbox': mailbox,
             'emails': emails,
             'selected_email': selected_email,
@@ -2121,14 +2210,17 @@ class MailWebView(LoginRequiredMixin, View):
 class MailboxCreateView(LoginRequiredMixin, View):
     def post(self, request):
         name = request.POST.get('name', '').strip()
+        parent = request.POST.get('parent', '').strip()
         if not name:
             messages.error(request, 'Folder name is required.')
             return redirect('/mail/')
-        if Mailbox.objects.filter(owner=request.user, name=name).exists():
-            messages.error(request, f'Folder "{name}" already exists.')
+        # Build full path with parent prefix
+        full_name = f'{parent}/{name}' if parent else name
+        if Mailbox.objects.filter(owner=request.user, name=full_name).exists():
+            messages.error(request, f'Folder "{full_name}" already exists.')
             return redirect('/mail/')
-        Mailbox.objects.create(owner=request.user, name=name, system=False)
-        return redirect(f'/mail/?mailbox={name}')
+        Mailbox.objects.create(owner=request.user, name=full_name, system=False)
+        return redirect(f'/mail/?mailbox={full_name}')
 
 
 class MailboxRenameView(LoginRequiredMixin, View):
