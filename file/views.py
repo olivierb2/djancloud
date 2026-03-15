@@ -2069,7 +2069,7 @@ class ContactUpdateView(LoginRequiredMixin, View):
 def _get_sorted_mailboxes(user):
     """Return mailboxes sorted: system folders first in fixed order, then custom."""
     from .models import SYSTEM_MAILBOXES
-    mailboxes = list(Mailbox.objects.filter(owner=user))
+    mailboxes = list(Mailbox.objects.filter(owner=user).exclude(name__startswith='__shared__'))
     system_order = {name: i for i, name in enumerate(SYSTEM_MAILBOXES)}
 
     def sort_key(mb):
