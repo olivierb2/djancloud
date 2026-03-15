@@ -377,15 +377,71 @@ class Contact(models.Model):
 SYSTEM_MAILBOXES = ['INBOX', 'Sent', 'Drafts', 'Trash', 'Junk']
 
 
+class SharedMailbox(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    email_alias = models.EmailField(unique=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='created_shared_mailboxes')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} <{self.email_alias}>"
+
+    def ensure_defaults(self):
+        for folder_name in SYSTEM_MAILBOXES:
+            Mailbox.objects.get_or_create(
+                shared_mailbox=self, owner=None, name=folder_name,
+                defaults={'system': True})
+
+
+class SharedMailboxMembership(models.Model):
+    PERMISSION_CHOICES = [
+        ('read', 'Read only'),
+        ('write', 'Read & Write'),
+        ('admin', 'Admin'),
+    ]
+
+    shared_mailbox = models.ForeignKey(
+        SharedMailbox, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='shared_mailbox_memberships')
+    permission = models.CharField(max_length=10, choices=PERMISSION_CHOICES, default='read')
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('shared_mailbox', 'user')]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.shared_mailbox.name} ({self.permission})"
+
+
 class Mailbox(models.Model):
     owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='mailboxes')
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='mailboxes', null=True, blank=True)
+    shared_mailbox = models.ForeignKey(
+        SharedMailbox, on_delete=models.CASCADE,
+        related_name='mailboxes', null=True, blank=True)
     name = models.CharField(max_length=255, default='INBOX')
     system = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [('owner', 'name')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['owner', 'name'],
+                condition=models.Q(owner__isnull=False),
+                name='unique_owner_mailbox'),
+            models.UniqueConstraint(
+                fields=['shared_mailbox', 'name'],
+                condition=models.Q(shared_mailbox__isnull=False),
+                name='unique_shared_mailbox'),
+        ]
         ordering = ['name']
 
     @property
@@ -393,7 +449,11 @@ class Mailbox(models.Model):
         return self.system
 
     def __str__(self):
-        return f"{self.owner.username}/{self.name}"
+        if self.owner:
+            return f"{self.owner.username}/{self.name}"
+        if self.shared_mailbox:
+            return f"[shared:{self.shared_mailbox.name}]/{self.name}"
+        return self.name
 
     @staticmethod
     def ensure_defaults(user):

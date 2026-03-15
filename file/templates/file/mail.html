@@ -31,6 +31,53 @@
                 </div>
                 {% include "file/_mailbox_tree_node.html" with nodes=mailbox_tree depth=0 %}
 
+                {% if shared_tree or is_admin %}
+                <div class="mt-4 border-t border-gray-200 pt-4">
+                    <div class="flex items-center justify-between mb-2 px-2">
+                        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Shared</h2>
+                        {% if is_admin %}
+                        <button onclick="openModal('shared-mailbox-modal')"
+                                class="rounded p-1 text-gray-400 hover:text-brand-600 hover:bg-gray-100" title="New shared mailbox">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% for entry in shared_tree %}
+                    <div class="mb-2">
+                        <div class="group flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-500">
+                            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            <span class="flex-1 truncate">{{ entry.shared_mailbox.name }}</span>
+                            {% if is_admin or entry.permission == 'admin' %}
+                            <button onclick="openMembersModal({{ entry.shared_mailbox.id }}, '{{ entry.shared_mailbox.name|escapejs }}')"
+                                    class="hidden group-hover:block rounded p-0.5 text-gray-400 hover:text-brand-600" title="Members">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                                </svg>
+                            </button>
+                            <form method="post" action="{% url 'shared_mailbox_delete' sm_id=entry.shared_mailbox.id %}" class="hidden group-hover:block">
+                                {% csrf_token %}
+                                <button type="submit" onclick="return confirm('Delete shared mailbox \'{{ entry.shared_mailbox.name|escapejs }}\'?')"
+                                        class="rounded p-0.5 text-gray-400 hover:text-red-600" title="Delete">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% include "file/_mailbox_tree_node.html" with nodes=entry.folders depth=1 %}
+                    </div>
+                    {% endfor %}
+                    {% if not shared_tree %}
+                    <p class="px-2 text-xs text-gray-400">No shared mailboxes</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 <div class="mt-6 border-t border-gray-200 pt-4">
                     <a href="{% url 'mail_signatures' %}"
                        class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-600 hover:bg-gray-50 transition-colors">
@@ -47,7 +94,7 @@
         <!-- Email detail view -->
         <main class="flex-1 overflow-y-auto p-4 lg:p-6">
             <div class="mb-4 flex items-center justify-between">
-                <a href="?mailbox={{ selected_mailbox.name }}"
+                <a href="?mailbox={{ selected_mailbox_name }}"
                    class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -204,7 +251,7 @@
             <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <div class="divide-y divide-gray-100">
                     {% for mail in emails %}
-                    <a href="?mailbox={{ selected_mailbox.name }}&email={{ mail.id }}"
+                    <a href="?mailbox={{ selected_mailbox_name }}&email={{ mail.id }}"
                        class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors
                               {% if not mail.is_read %}bg-blue-50/30{% endif %}">
                         <div class="flex-shrink-0">
@@ -308,6 +355,56 @@
 </div>
 {% endif %}
 
+{% if is_admin %}
+<!-- New Shared Mailbox modal -->
+<div id="shared-mailbox-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">New shared mailbox</h3>
+        <form method="post" action="{% url 'shared_mailbox_create' %}">
+            {% csrf_token %}
+            <input type="text" name="name" required maxlength="255" placeholder="Name (e.g. Support)" autofocus
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none mb-3">
+            <input type="email" name="email_alias" required maxlength="255" placeholder="Email alias (e.g. support@example.com)"
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeModal('shared-mailbox-modal')"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Members modal -->
+<div id="shared-members-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Members — <span id="sm-members-title"></span></h3>
+        <div id="sm-members-list" class="mb-4 max-h-60 overflow-y-auto divide-y divide-gray-100"></div>
+        <form method="post" id="sm-add-member-form" class="flex items-center gap-2 border-t border-gray-100 pt-4">
+            {% csrf_token %}
+            <select name="user_id" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Add a user...</option>
+                {% for u in all_users %}
+                <option value="{{ u.id }}">{{ u.username }}</option>
+                {% endfor %}
+            </select>
+            <select name="permission" class="rounded-lg border border-gray-300 px-2 py-2 text-sm">
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button type="submit"
+                    class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Add</button>
+        </form>
+        <div class="flex justify-end mt-4">
+            <button type="button" onclick="closeModal('shared-members-modal')"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -325,6 +422,45 @@ document.querySelectorAll('[id$="-modal"]').forEach(modal => {
         if (e.target === modal) closeModal(modal.id);
     });
 });
+
+{% if is_admin %}
+var sharedMembersData = {
+    {% for entry in shared_tree %}
+    {{ entry.shared_mailbox.id }}: {
+        name: "{{ entry.shared_mailbox.name|escapejs }}",
+        members: [
+            {% for m in entry.shared_mailbox.memberships.all %}
+            { userId: {{ m.user.id }}, username: "{{ m.user.username|escapejs }}", permission: "{{ m.permission }}" },
+            {% endfor %}
+        ]
+    },
+    {% endfor %}
+};
+
+function openMembersModal(smId, name) {
+    var data = sharedMembersData[smId];
+    document.getElementById('sm-members-title').textContent = name;
+    var list = document.getElementById('sm-members-list');
+    list.innerHTML = '';
+    if (data && data.members.length) {
+        data.members.forEach(function(m) {
+            var row = document.createElement('div');
+            row.className = 'flex items-center justify-between py-2 px-1';
+            row.innerHTML = '<span class="text-sm text-gray-700">' + m.username +
+                ' <span class="text-xs text-gray-400">(' + m.permission + ')</span></span>' +
+                '<form method="post" action="/mail/shared/' + smId + '/members/' + m.userId + '/delete/" class="inline">' +
+                '<input type="hidden" name="csrfmiddlewaretoken" value="' + document.querySelector('[name=csrfmiddlewaretoken]').value + '">' +
+                '<button type="submit" class="text-xs text-red-500 hover:text-red-700">Remove</button></form>';
+            list.appendChild(row);
+        });
+    } else {
+        list.innerHTML = '<p class="text-sm text-gray-400 py-2">No members</p>';
+    }
+    document.getElementById('sm-add-member-form').action = '/mail/shared/' + smId + '/members/add/';
+    openModal('shared-members-modal');
+}
+{% endif %}
+
 function deleteFolder(mailboxId, name) {
     if (!confirm('Delete folder "' + name + '" and all its emails?')) return;
     var form = document.createElement('form');

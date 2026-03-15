@@ -38,6 +38,8 @@ from file.views import (
     MailComposeView, MailSendView, ContactSearchView, FilePickerView,
     SignatureListView, SignatureCreateView, SignatureUpdateView,
     SignatureDeleteView, SignatureContentView,
+    SharedMailboxCreateView, SharedMailboxDeleteView,
+    SharedMailboxMemberAddView, SharedMailboxMemberDeleteView,
 )
 from file.caldav_views import (
     WellKnownCalDavView, WellKnownCardDavView,
@@ -169,6 +171,10 @@ urlpatterns = [
     path('mail/signatures/<int:sig_id>/update/', SignatureUpdateView.as_view(), name='signature_update'),
     path('mail/signatures/<int:sig_id>/delete/', SignatureDeleteView.as_view(), name='signature_delete'),
     path('mail/signatures/<int:sig_id>/content/', SignatureContentView.as_view(), name='signature_content'),
+    path('mail/shared/create/', SharedMailboxCreateView.as_view(), name='shared_mailbox_create'),
+    path('mail/shared/<int:sm_id>/delete/', SharedMailboxDeleteView.as_view(), name='shared_mailbox_delete'),
+    path('mail/shared/<int:sm_id>/members/add/', SharedMailboxMemberAddView.as_view(), name='shared_mailbox_member_add'),
+    path('mail/shared/<int:sm_id>/members/<int:user_id>/delete/', SharedMailboxMemberDeleteView.as_view(), name='shared_mailbox_member_delete'),
     path('api/contacts/search/', ContactSearchView.as_view(), name='contact_search'),
     path('api/filepicker/', FilePickerView.as_view(), name='filepicker_root'),
     path('api/filepicker/<int:folder_id>/', FilePickerView.as_view(), name='filepicker_folder'),

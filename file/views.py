@@ -2081,13 +2081,19 @@ def _get_sorted_mailboxes(user):
     return mailboxes
 
 
-def _build_mailbox_tree(mailboxes, selected_name):
+def _build_mailbox_tree(mailboxes, selected_name, prefix=''):
     """Build a tree structure from flat mailbox list using '/' as separator.
 
     Returns a list of tree nodes:
     [{ 'mailbox': Mailbox, 'label': str, 'children': [...], 'selected': bool, 'on_path': bool }]
+
+    If prefix is set (e.g. '__shared__/Support'), full_name will be
+    prefixed accordingly for URL generation.
     """
     from .models import SYSTEM_MAILBOXES
+
+    def _full(name):
+        return f'{prefix}/{name}' if prefix else name
 
     # System mailboxes are always top-level
     system = []
@@ -2095,13 +2101,14 @@ def _build_mailbox_tree(mailboxes, selected_name):
     custom = []
     for mb in mailboxes:
         if mb.name in SYSTEM_MAILBOXES:
-            on_path = selected_name and (selected_name == mb.name or selected_name.startswith(mb.name + '/'))
+            fn = _full(mb.name)
+            on_path = selected_name and (selected_name == fn or selected_name.startswith(fn + '/'))
             node = {
                 'mailbox': mb,
                 'label': mb.name,
-                'full_name': mb.name,
+                'full_name': fn,
                 'children': [],
-                'selected': mb.name == selected_name,
+                'selected': fn == selected_name,
                 'on_path': on_path,
             }
             system.append(node)
@@ -2119,14 +2126,15 @@ def _build_mailbox_tree(mailboxes, selected_name):
         for i in range(len(parts) - 1):
             parent_path = '/'.join(parts[:i + 1])
             if parent_path not in node_map:
+                fp = _full(parent_path)
                 # Virtual parent node (no real mailbox)
                 node_map[parent_path] = {
                     'mailbox': None,
                     'label': parts[i],
-                    'full_name': parent_path,
+                    'full_name': fp,
                     'children': [],
                     'selected': False,
-                    'on_path': selected_name and selected_name.startswith(parent_path + '/'),
+                    'on_path': selected_name and selected_name.startswith(fp + '/'),
                 }
                 if i == 0:
                     root_nodes.append(node_map[parent_path])
@@ -2134,22 +2142,22 @@ def _build_mailbox_tree(mailboxes, selected_name):
                     gp_path = '/'.join(parts[:i])
                     node_map[gp_path]['children'].append(node_map[parent_path])
 
-        full_name = mb.name
-        is_selected = full_name == selected_name
-        on_path = selected_name and (selected_name == full_name or selected_name.startswith(full_name + '/'))
+        fn = _full(mb.name)
+        is_selected = fn == selected_name
+        on_path = selected_name and (selected_name == fn or selected_name.startswith(fn + '/'))
         node = {
             'mailbox': mb,
             'label': parts[-1],
-            'full_name': full_name,
-            'children': node_map[full_name]['children'] if full_name in node_map else [],
+            'full_name': fn,
+            'children': node_map[mb.name]['children'] if mb.name in node_map else [],
             'selected': is_selected,
             'on_path': on_path,
         }
-        node_map[full_name] = node
+        node_map[mb.name] = node
 
         if len(parts) == 1:
             # Check if already added as virtual parent
-            existing = next((n for n in root_nodes if n['full_name'] == full_name), None)
+            existing = next((n for n in root_nodes if n['full_name'] == fn), None)
             if existing:
                 existing['mailbox'] = mb
                 existing['selected'] = is_selected
@@ -2160,7 +2168,7 @@ def _build_mailbox_tree(mailboxes, selected_name):
             parent_path = '/'.join(parts[:-1])
             if parent_path in node_map:
                 # Only add if not already a child
-                existing_child = next((c for c in node_map[parent_path]['children'] if c['full_name'] == full_name), None)
+                existing_child = next((c for c in node_map[parent_path]['children'] if c['full_name'] == fn), None)
                 if not existing_child:
                     node_map[parent_path]['children'].append(node)
 
@@ -2169,10 +2177,27 @@ def _build_mailbox_tree(mailboxes, selected_name):
 
 class MailWebView(LoginRequiredMixin, View):
     def get(self, request):
+        from .models import SharedMailbox, SharedMailboxMembership
+
         Mailbox.ensure_defaults(request.user)
 
         mailbox_name = request.GET.get('mailbox', 'INBOX')
-        mailbox = Mailbox.objects.filter(owner=request.user, name=mailbox_name).first()
+
+        # Resolve mailbox: personal or shared (__shared__/Name/Folder)
+        mailbox = None
+        is_shared_selection = mailbox_name.startswith('__shared__/')
+        if is_shared_selection:
+            parts = mailbox_name[len('__shared__/'):].split('/', 1)
+            sm_name = parts[0]
+            folder_name = parts[1] if len(parts) > 1 else 'INBOX'
+            membership = SharedMailboxMembership.objects.filter(
+                user=request.user, shared_mailbox__name=sm_name).first()
+            if membership:
+                mailbox = Mailbox.objects.filter(
+                    shared_mailbox=membership.shared_mailbox, name=folder_name).first()
+        else:
+            mailbox = Mailbox.objects.filter(owner=request.user, name=mailbox_name).first()
+
         mailboxes = _get_sorted_mailboxes(request.user)
 
         selected_email = None
@@ -2186,7 +2211,7 @@ class MailWebView(LoginRequiredMixin, View):
                     selected_email.is_read = True
                     selected_email.save(update_fields=['is_read'])
 
-        # Unread counts per mailbox
+        # Unread counts for personal mailboxes
         unread_counts = dict(
             Email.objects.filter(mailbox__owner=request.user, is_read=False)
             .values_list('mailbox_id')
@@ -2198,12 +2223,44 @@ class MailWebView(LoginRequiredMixin, View):
 
         mailbox_tree = _build_mailbox_tree(mailboxes, mailbox_name)
 
+        # Shared mailboxes
+        shared_memberships = SharedMailboxMembership.objects.filter(
+            user=request.user).select_related('shared_mailbox')
+        shared_tree = []
+        for membership in shared_memberships:
+            sm = membership.shared_mailbox
+            sm.ensure_defaults()
+            sm_mailboxes = list(Mailbox.objects.filter(shared_mailbox=sm))
+            # Compute unread counts for shared mailboxes
+            sm_unread = dict(
+                Email.objects.filter(mailbox__shared_mailbox=sm, is_read=False)
+                .values_list('mailbox_id')
+                .annotate(count=models.Count('id'))
+                .values_list('mailbox_id', 'count')
+            )
+            for smb in sm_mailboxes:
+                smb.unread_count = sm_unread.get(smb.id, 0)
+            shared_tree.append({
+                'shared_mailbox': sm,
+                'permission': membership.permission,
+                'folders': _build_mailbox_tree(
+                    sm_mailboxes, mailbox_name,
+                    prefix=f'__shared__/{sm.name}'),
+            })
+
+        is_admin = request.user.role == 'admin'
+        all_users = list(User.objects.all().order_by('username')) if is_admin else []
+
         return render(request, 'file/mail.html', {
             'mailboxes': mailboxes,
             'mailbox_tree': mailbox_tree,
+            'shared_tree': shared_tree,
             'selected_mailbox': mailbox,
+            'selected_mailbox_name': mailbox_name,
             'emails': emails,
             'selected_email': selected_email,
+            'is_admin': is_admin,
+            'all_users': all_users,
         })
 
 
@@ -2667,3 +2724,81 @@ class SignatureContentView(LoginRequiredMixin, View):
     def get(self, request, sig_id):
         sig = get_object_or_404(EmailSignature, id=sig_id, owner=request.user)
         return JsonResponse({'html': sig.html_content})
+
+
+class SharedMailboxCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        from .models import SharedMailbox, SharedMailboxMembership
+        if request.user.role != 'admin':
+            messages.error(request, 'Admin access required.')
+            return redirect('/mail/')
+        name = request.POST.get('name', '').strip()
+        email_alias = request.POST.get('email_alias', '').strip()
+        if not name or not email_alias:
+            messages.error(request, 'Name and email alias are required.')
+            return redirect('/mail/')
+        if SharedMailbox.objects.filter(name=name).exists():
+            messages.error(request, f'Shared mailbox "{name}" already exists.')
+            return redirect('/mail/')
+        if SharedMailbox.objects.filter(email_alias=email_alias).exists():
+            messages.error(request, f'Email alias "{email_alias}" is already in use.')
+            return redirect('/mail/')
+        sm = SharedMailbox.objects.create(
+            name=name, email_alias=email_alias, created_by=request.user)
+        sm.ensure_defaults()
+        # Auto-add creator as admin member
+        SharedMailboxMembership.objects.create(
+            shared_mailbox=sm, user=request.user, permission='admin')
+        return redirect(f'/mail/?mailbox=__shared__/{name}/INBOX')
+
+
+class SharedMailboxDeleteView(LoginRequiredMixin, View):
+    def post(self, request, sm_id):
+        from .models import SharedMailbox, SharedMailboxMembership
+        sm = get_object_or_404(SharedMailbox, id=sm_id)
+        if request.user.role != 'admin':
+            membership = SharedMailboxMembership.objects.filter(
+                shared_mailbox=sm, user=request.user, permission='admin').first()
+            if not membership:
+                messages.error(request, 'Admin access required.')
+                return redirect('/mail/')
+        sm.delete()
+        messages.success(request, f'Shared mailbox "{sm.name}" deleted.')
+        return redirect('/mail/')
+
+
+class SharedMailboxMemberAddView(LoginRequiredMixin, View):
+    def post(self, request, sm_id):
+        from .models import SharedMailbox, SharedMailboxMembership
+        sm = get_object_or_404(SharedMailbox, id=sm_id)
+        if request.user.role != 'admin':
+            membership = SharedMailboxMembership.objects.filter(
+                shared_mailbox=sm, user=request.user, permission='admin').first()
+            if not membership:
+                messages.error(request, 'Admin access required.')
+                return redirect('/mail/')
+        user_id = request.POST.get('user_id')
+        permission = request.POST.get('permission', 'read')
+        if not user_id:
+            messages.error(request, 'User is required.')
+            return redirect('/mail/')
+        user = get_object_or_404(User, id=user_id)
+        SharedMailboxMembership.objects.update_or_create(
+            shared_mailbox=sm, user=user,
+            defaults={'permission': permission})
+        return redirect(f'/mail/?mailbox=__shared__/{sm.name}/INBOX')
+
+
+class SharedMailboxMemberDeleteView(LoginRequiredMixin, View):
+    def post(self, request, sm_id, user_id):
+        from .models import SharedMailbox, SharedMailboxMembership
+        sm = get_object_or_404(SharedMailbox, id=sm_id)
+        if request.user.role != 'admin':
+            membership = SharedMailboxMembership.objects.filter(
+                shared_mailbox=sm, user=request.user, permission='admin').first()
+            if not membership:
+                messages.error(request, 'Admin access required.')
+                return redirect('/mail/')
+        SharedMailboxMembership.objects.filter(
+            shared_mailbox=sm, user_id=user_id).delete()
+        return redirect(f'/mail/?mailbox=__shared__/{sm.name}/INBOX')

@@ -74,11 +74,22 @@ class ContactAdmin(admin.ModelAdmin):
     search_fields = ('uid', 'fn', 'email', 'tel')
 
 
+class SharedMailboxMembershipInline(admin.TabularInline):
+    model = models.SharedMailboxMembership
+    extra = 1
+
+
+class SharedMailboxAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email_alias', 'created_by', 'created_at')
+    inlines = [SharedMailboxMembershipInline]
+
+
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(models.File, FileAdmin)
 admin.site.register(models.Folder, FolderAdmin)
 admin.site.register(models.AppToken, AppTokenAdmin)
 admin.site.register(models.SharedFolder, SharedFolderAdmin)
+admin.site.register(models.SharedMailbox, SharedMailboxAdmin)
 admin.site.register(models.Calendar, CalendarAdmin)
 admin.site.register(models.Event, EventAdmin)
 admin.site.register(models.AddressBook, AddressBookAdmin)

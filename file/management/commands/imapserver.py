@@ -94,10 +94,67 @@ class IMAPSession:
         self.selected_readonly = False
         self._emails_cache = []
 
+    SHARED_PREFIX = '__shared__/'
+
     async def send(self, line):
         print(f'S: {line[:500]}')
         self.writer.write((line + '\r\n').encode('utf-8'))
         await self.writer.drain()
+
+    def _parse_shared_name(self, name):
+        """Parse a mailbox name that may be in the shared namespace.
+
+        Returns (shared_mailbox_name, folder_name) or (None, name) for personal.
+        E.g. '__shared__/Support/INBOX' -> ('Support', 'INBOX')
+             'INBOX' -> (None, 'INBOX')
+        """
+        if name.startswith(self.SHARED_PREFIX):
+            rest = name[len(self.SHARED_PREFIX):]
+            parts = rest.split('/', 1)
+            shared_name = parts[0]
+            folder = parts[1] if len(parts) > 1 else 'INBOX'
+            return shared_name, folder
+        return None, name
+
+    async def _resolve_mailbox(self, name, require_write=False):
+        """Resolve an IMAP mailbox name to a Mailbox object.
+
+        Handles both personal and __shared__/ namespace.
+        Returns (Mailbox, error_string) - error_string is None on success.
+        """
+        from file.models import Mailbox, SharedMailbox, SharedMailboxMembership
+
+        shared_name, folder = self._parse_shared_name(name)
+
+        if shared_name is None:
+            # Personal mailbox
+            mb = await asyncio.to_thread(
+                lambda: Mailbox.objects.filter(owner=self.user, name=folder).first()
+            )
+            return (mb, None) if mb else (None, 'Mailbox not found')
+
+        # Shared mailbox
+        def _get_shared():
+            try:
+                sm = SharedMailbox.objects.get(name=shared_name)
+            except SharedMailbox.DoesNotExist:
+                return None, None, 'Shared mailbox not found'
+            try:
+                membership = SharedMailboxMembership.objects.get(
+                    shared_mailbox=sm, user=self.user)
+            except SharedMailboxMembership.DoesNotExist:
+                return None, None, 'Access denied'
+            if require_write and membership.permission == 'read':
+                return None, None, 'Read-only access to shared mailbox'
+            mb = Mailbox.objects.filter(shared_mailbox=sm, name=folder).first()
+            if not mb:
+                return None, None, f'Folder not found in shared mailbox'
+            return mb, membership.permission, None
+
+        mb, perm, err = await asyncio.to_thread(_get_shared)
+        if err:
+            return None, err
+        return mb, None
 
     async def run(self):
         await self.send('* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] Djancloud IMAP ready')
@@ -215,26 +272,92 @@ class IMAPSession:
         reference = args[0] if args else ''
         pattern = args[1] if len(args) > 1 else '*'
 
-        from file.models import Mailbox
-        mailboxes = await asyncio.to_thread(
-            lambda: list(Mailbox.objects.filter(owner=self.user).values_list('name', flat=True))
-        )
+        from file.models import Mailbox, SharedMailboxMembership
 
-        for name in mailboxes:
-            # Match pattern (simple wildcard)
-            if pattern == '*' or pattern == '%' or name == pattern:
-                attrs = '\\HasNoChildren'
-                if name == 'INBOX':
-                    attrs = '\\HasNoChildren'
-                elif name == 'Trash':
-                    attrs = '\\HasNoChildren \\Trash'
-                elif name == 'Sent':
-                    attrs = '\\HasNoChildren \\Sent'
-                elif name == 'Drafts':
-                    attrs = '\\HasNoChildren \\Drafts'
-                elif name == 'Junk':
-                    attrs = '\\HasNoChildren \\Junk'
-                await self.send(f'* LIST ({attrs}) "/" "{name}"')
+        def _get_all_mailboxes():
+            # Personal mailboxes
+            personal = list(Mailbox.objects.filter(
+                owner=self.user).values_list('name', flat=True))
+            # Shared mailboxes the user has access to
+            memberships = SharedMailboxMembership.objects.filter(
+                user=self.user).select_related('shared_mailbox')
+            shared = []
+            for m in memberships:
+                sm = m.shared_mailbox
+                folders = list(Mailbox.objects.filter(
+                    shared_mailbox=sm).values_list('name', flat=True))
+                for f in folders:
+                    shared.append((sm.name, f))
+            return personal, shared
+
+        personal, shared = await asyncio.to_thread(_get_all_mailboxes)
+
+        def _match(name, pat):
+            if pat == '*':
+                return True
+            if pat == '%':
+                return '/' not in name
+            if '*' in pat:
+                prefix = pat.split('*')[0]
+                return name.startswith(prefix)
+            if '%' in pat:
+                prefix = pat.split('%')[0]
+                return name.startswith(prefix) and '/' not in name[len(prefix):]
+            return name == pat
+
+        def _attrs_for(name):
+            if name == 'Trash':
+                return '\\Trash'
+            elif name == 'Sent':
+                return '\\Sent'
+            elif name == 'Drafts':
+                return '\\Drafts'
+            elif name == 'Junk':
+                return '\\Junk'
+            return ''
+
+        # Personal mailboxes
+        # Determine which names have children
+        has_children = set()
+        for name in personal:
+            if '/' in name:
+                parent = name.rsplit('/', 1)[0]
+                has_children.add(parent)
+
+        for name in personal:
+            full = reference + name if reference else name
+            if _match(full, pattern):
+                children_flag = '\\HasChildren' if name in has_children else '\\HasNoChildren'
+                special = _attrs_for(name.split('/')[-1] if '/' in name else name)
+                attrs = children_flag + (' ' + special if special else '')
+                await self.send(f'* LIST ({attrs}) "/" "{full}"')
+
+        # Shared mailboxes
+        if shared:
+            # Shared namespace container
+            shared_names = set()
+            for sm_name, _ in shared:
+                shared_names.add(sm_name)
+
+            # Check if listing shared namespace
+            for sm_name, folder in shared:
+                imap_name = f'__shared__/{sm_name}/{folder}'
+                full = reference + imap_name if reference else imap_name
+                if _match(full, pattern):
+                    special = _attrs_for(folder)
+                    attrs = '\\HasNoChildren' + (' ' + special if special else '')
+                    await self.send(f'* LIST ({attrs}) "/" "{full}"')
+
+            # Also list the shared namespace containers when pattern matches
+            for sm_name in sorted(shared_names):
+                container = f'__shared__/{sm_name}'
+                full = reference + container if reference else container
+                if _match(full, pattern):
+                    await self.send(f'* LIST (\\HasChildren \\Noselect) "/" "{full}"')
+
+            # List __shared__ itself if pattern matches
+            if _match('__shared__', pattern):
+                await self.send(f'* LIST (\\HasChildren \\Noselect) "/" "__shared__"')
 
         await self.send(f'{tag} OK LIST completed')
 
@@ -256,13 +379,26 @@ class IMAPSession:
         args = _parse_imap_args(rest)
         mailbox_name = args[0] if args else 'INBOX'
 
-        from file.models import Mailbox, Email
-        mb = await asyncio.to_thread(
-            lambda: Mailbox.objects.filter(owner=self.user, name=mailbox_name).first()
-        )
-        if not mb:
-            await self.send(f'{tag} NO Mailbox not found')
+        from file.models import Email
+        mb, err = await self._resolve_mailbox(mailbox_name)
+        if err:
+            await self.send(f'{tag} NO {err}')
             return
+
+        # Shared mailboxes with read-only permission
+        shared_name, _ = self._parse_shared_name(mailbox_name)
+        if shared_name and not readonly:
+            from file.models import SharedMailbox, SharedMailboxMembership
+            def _check_perm():
+                try:
+                    sm = SharedMailbox.objects.get(name=shared_name)
+                    m = SharedMailboxMembership.objects.get(shared_mailbox=sm, user=self.user)
+                    return m.permission == 'read'
+                except (SharedMailbox.DoesNotExist, SharedMailboxMembership.DoesNotExist):
+                    return True
+            is_readonly = await asyncio.to_thread(_check_perm)
+            if is_readonly:
+                readonly = True
 
         self.selected_mailbox = mb
         self.selected_readonly = readonly
@@ -307,13 +443,11 @@ class IMAPSession:
         mailbox_name = args[0]
         items_str = args[1].upper()
 
-        from file.models import Mailbox, Email
+        from file.models import Email
 
-        mb = await asyncio.to_thread(
-            lambda: Mailbox.objects.filter(owner=self.user, name=mailbox_name).first()
-        )
-        if not mb:
-            await self.send(f'{tag} NO Mailbox not found')
+        mb, err = await self._resolve_mailbox(mailbox_name)
+        if err:
+            await self.send(f'{tag} NO {err}')
             return
 
         def _get_status():
@@ -884,13 +1018,11 @@ class IMAPSession:
         dest_args = _parse_imap_args(parts[1])
         dest_name = dest_args[0] if dest_args else parts[1].strip()
 
-        from file.models import Mailbox, Email
+        from file.models import Email
 
-        dest_mb = await asyncio.to_thread(
-            lambda: Mailbox.objects.filter(owner=self.user, name=dest_name).first()
-        )
-        if not dest_mb:
-            await self.send(f'{tag} NO [TRYCREATE] Destination mailbox not found')
+        dest_mb, err = await self._resolve_mailbox(dest_name, require_write=True)
+        if err:
+            await self.send(f'{tag} NO [TRYCREATE] {err}')
             return
 
         await self._refresh_cache()
@@ -922,14 +1054,40 @@ class IMAPSession:
         args = _parse_imap_args(rest)
         name = args[0] if args else rest.strip()
 
-        from file.models import Mailbox
-        _, created = await asyncio.to_thread(
-            lambda: Mailbox.objects.get_or_create(owner=self.user, name=name)
-        )
-        if created:
-            await self.send(f'{tag} OK CREATE completed')
+        shared_name, folder = self._parse_shared_name(name)
+
+        if shared_name:
+            from file.models import Mailbox, SharedMailbox, SharedMailboxMembership
+            def _create_shared():
+                try:
+                    sm = SharedMailbox.objects.get(name=shared_name)
+                except SharedMailbox.DoesNotExist:
+                    return False, 'Shared mailbox not found'
+                try:
+                    m = SharedMailboxMembership.objects.get(shared_mailbox=sm, user=self.user)
+                except SharedMailboxMembership.DoesNotExist:
+                    return False, 'Access denied'
+                if m.permission == 'read':
+                    return False, 'Read-only access'
+                _, created = Mailbox.objects.get_or_create(shared_mailbox=sm, owner=None, name=folder)
+                return created, None
+
+            created, err = await asyncio.to_thread(_create_shared)
+            if err:
+                await self.send(f'{tag} NO {err}')
+            elif created:
+                await self.send(f'{tag} OK CREATE completed')
+            else:
+                await self.send(f'{tag} NO Mailbox already exists')
         else:
-            await self.send(f'{tag} NO Mailbox already exists')
+            from file.models import Mailbox
+            _, created = await asyncio.to_thread(
+                lambda: Mailbox.objects.get_or_create(owner=self.user, name=name)
+            )
+            if created:
+                await self.send(f'{tag} OK CREATE completed')
+            else:
+                await self.send(f'{tag} NO Mailbox already exists')
 
     async def cmd_DELETE(self, tag, rest):
         if not self.user:
@@ -939,18 +1097,43 @@ class IMAPSession:
         args = _parse_imap_args(rest)
         name = args[0] if args else rest.strip()
 
+        shared_name, folder = self._parse_shared_name(name)
+
         from file.models import Mailbox, SYSTEM_MAILBOXES
-        if name in SYSTEM_MAILBOXES:
+        if folder in SYSTEM_MAILBOXES:
             await self.send(f'{tag} NO Cannot delete system mailbox')
             return
 
-        deleted = await asyncio.to_thread(
-            lambda: Mailbox.objects.filter(owner=self.user, name=name).delete()
-        )
-        if deleted[0]:
-            await self.send(f'{tag} OK DELETE completed')
+        if shared_name:
+            from file.models import SharedMailbox, SharedMailboxMembership
+            def _delete_shared():
+                try:
+                    sm = SharedMailbox.objects.get(name=shared_name)
+                except SharedMailbox.DoesNotExist:
+                    return 0, 'Shared mailbox not found'
+                try:
+                    m = SharedMailboxMembership.objects.get(shared_mailbox=sm, user=self.user)
+                except SharedMailboxMembership.DoesNotExist:
+                    return 0, 'Access denied'
+                if m.permission != 'admin':
+                    return 0, 'Admin access required'
+                return Mailbox.objects.filter(shared_mailbox=sm, name=folder).delete(), None
+
+            result, err = await asyncio.to_thread(_delete_shared)
+            if err:
+                await self.send(f'{tag} NO {err}')
+            elif result[0]:
+                await self.send(f'{tag} OK DELETE completed')
+            else:
+                await self.send(f'{tag} NO Mailbox not found')
         else:
-            await self.send(f'{tag} NO Mailbox not found')
+            deleted = await asyncio.to_thread(
+                lambda: Mailbox.objects.filter(owner=self.user, name=name).delete()
+            )
+            if deleted[0]:
+                await self.send(f'{tag} OK DELETE completed')
+            else:
+                await self.send(f'{tag} NO Mailbox not found')
 
     async def cmd_RENAME(self, tag, rest):
         if not self.user:
@@ -965,23 +1148,57 @@ class IMAPSession:
         old_name, new_name = args[0], args[1]
 
         from file.models import Mailbox, SYSTEM_MAILBOXES
-        if old_name in SYSTEM_MAILBOXES:
+
+        old_shared, old_folder = self._parse_shared_name(old_name)
+        new_shared, new_folder = self._parse_shared_name(new_name)
+
+        if old_folder in SYSTEM_MAILBOXES:
             await self.send(f'{tag} NO Cannot rename system mailbox')
             return
 
-        def _do_rename():
-            mb = Mailbox.objects.filter(owner=self.user, name=old_name).first()
-            if not mb:
-                return False
-            mb.name = new_name
-            mb.save(update_fields=['name'])
-            return True
+        if old_shared:
+            from file.models import SharedMailbox, SharedMailboxMembership
+            def _rename_shared():
+                try:
+                    sm = SharedMailbox.objects.get(name=old_shared)
+                except SharedMailbox.DoesNotExist:
+                    return False, 'Shared mailbox not found'
+                try:
+                    m = SharedMailboxMembership.objects.get(shared_mailbox=sm, user=self.user)
+                except SharedMailboxMembership.DoesNotExist:
+                    return False, 'Access denied'
+                if m.permission == 'read':
+                    return False, 'Read-only access'
+                mb = Mailbox.objects.filter(shared_mailbox=sm, name=old_folder).first()
+                if not mb:
+                    return False, 'Mailbox not found'
+                mb.name = new_folder
+                mb.save(update_fields=['name'])
+                return True, None
 
-        ok = await asyncio.to_thread(_do_rename)
-        if ok:
-            await self.send(f'{tag} OK RENAME completed')
+            ok, err = await asyncio.to_thread(_rename_shared)
+            if err:
+                await self.send(f'{tag} NO {err}')
+            else:
+                await self.send(f'{tag} OK RENAME completed')
         else:
-            await self.send(f'{tag} NO Mailbox not found')
+            if old_name in SYSTEM_MAILBOXES:
+                await self.send(f'{tag} NO Cannot rename system mailbox')
+                return
+
+            def _do_rename():
+                mb = Mailbox.objects.filter(owner=self.user, name=old_name).first()
+                if not mb:
+                    return False
+                mb.name = new_name
+                mb.save(update_fields=['name'])
+                return True
+
+            ok = await asyncio.to_thread(_do_rename)
+            if ok:
+                await self.send(f'{tag} OK RENAME completed')
+            else:
+                await self.send(f'{tag} NO Mailbox not found')
 
     async def cmd_SUBSCRIBE(self, tag, rest):
         await self.send(f'{tag} OK SUBSCRIBE completed')
@@ -993,7 +1210,7 @@ class IMAPSession:
         await self.send(f'{tag} OK CHECK completed')
 
     async def cmd_NAMESPACE(self, tag, rest):
-        await self.send('* NAMESPACE (("" "/")) NIL NIL')
+        await self.send('* NAMESPACE (("" "/")) (("__shared__/" "/")) NIL')
         await self.send(f'{tag} OK NAMESPACE completed')
 
     async def cmd_ID(self, tag, rest):
@@ -1048,12 +1265,10 @@ class IMAPSession:
         import email.policy
         msg = email_mod.message_from_string(raw_str, policy=email_mod.policy.default)
 
-        from file.models import Mailbox, Email
-        mb = await asyncio.to_thread(
-            lambda: Mailbox.objects.filter(owner=self.user, name=mailbox_name).first()
-        )
-        if not mb:
-            await self.send(f'{tag} NO [TRYCREATE] Mailbox not found')
+        from file.models import Email
+        mb, err = await self._resolve_mailbox(mailbox_name, require_write=True)
+        if err:
+            await self.send(f'{tag} NO [TRYCREATE] {err}')
             return
 
         await asyncio.to_thread(

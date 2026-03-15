@@ -72,6 +72,8 @@ class DjancloudSMTPHandler:
         recipients = [addr.strip() for addr in (envelope.rcpt_tos or [])]
         delivered = 0
 
+        from file.models import SharedMailbox
+
         for rcpt in recipients:
             # Extract bare email from "Name <email>" format
             bare = rcpt
@@ -79,14 +81,52 @@ class DjancloudSMTPHandler:
                 bare = bare.split('<')[1].split('>')[0]
             bare = bare.lower().strip()
 
+            # Try personal user mailbox first
             try:
                 user = await User.objects.aget(email__iexact=bare)
             except User.DoesNotExist:
-                logger.info("No user found for recipient: %s", bare)
+                user = None
+
+            if user:
+                mailbox, _ = await Mailbox.objects.aget_or_create(
+                    owner=user, name='INBOX', defaults={'system': True})
+
+                mail = await Email.objects.acreate(
+                    mailbox=mailbox,
+                    message_id=message_id,
+                    from_address=from_addr,
+                    to_addresses=to_addrs,
+                    cc_addresses=cc_addrs,
+                    subject=subject,
+                    body_text=body_text,
+                    body_html=body_html,
+                    raw_data=raw_str,
+                )
+
+                for att in attachments:
+                    await EmailAttachment.objects.acreate(
+                        email=mail,
+                        filename=att['filename'],
+                        content_type=att['content_type'],
+                        data=att['data'],
+                        size=att['size'],
+                    )
+
+                delivered += 1
+                logger.info("Delivered email to %s (user: %s)", bare, user.username)
                 continue
 
+            # Try shared mailbox alias
+            try:
+                shared_mb = await SharedMailbox.objects.aget(email_alias__iexact=bare)
+            except SharedMailbox.DoesNotExist:
+                logger.info("No user or shared mailbox found for recipient: %s", bare)
+                continue
+
+            # Deliver to shared mailbox INBOX
             mailbox, _ = await Mailbox.objects.aget_or_create(
-                owner=user, name='INBOX', defaults={'system': True})
+                shared_mailbox=shared_mb, owner=None, name='INBOX',
+                defaults={'system': True})
 
             mail = await Email.objects.acreate(
                 mailbox=mailbox,
@@ -110,7 +150,7 @@ class DjancloudSMTPHandler:
                 )
 
             delivered += 1
-            logger.info("Delivered email to %s (user: %s)", bare, user.username)
+            logger.info("Delivered email to shared mailbox %s (%s)", bare, shared_mb.name)
 
         if delivered == 0:
             logger.warning("No local recipients matched for: %s", recipients)
