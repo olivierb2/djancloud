@@ -2081,6 +2081,77 @@ class EmailAttachmentDownloadView(LoginRequiredMixin, View):
         return response
 
 
+class FilePickerView(LoginRequiredMixin, View):
+    """API to browse folders and files for the attachment picker."""
+    def get(self, request, folder_id=None):
+        if folder_id:
+            folder, _ = get_accessible_folder(request, folder_id, permission='read')
+        else:
+            folder = get_object_or_404(
+                Folder, owner=request.user,
+                full_path=f"/{request.user.username}/")
+
+        is_shared = folder.full_path.startswith('/__shared__/')
+
+        # Breadcrumbs
+        breadcrumbs = []
+        current = folder
+        while current:
+            if current.full_path == f"/{request.user.username}/":
+                breadcrumbs.insert(0, {'name': 'My files', 'id': current.id})
+            else:
+                name = current.name or current.full_path.strip('/').split('/')[-1]
+                breadcrumbs.insert(0, {'name': name, 'id': current.id})
+            current = current.parent
+
+        # Subfolders
+        if is_shared:
+            children = folder.subfolders.all().order_by('name')
+        else:
+            children = folder.subfolders.filter(owner=request.user).order_by('name')
+
+        subfolders = [
+            {'id': sf.id, 'name': sf.name, 'type': 'folder'}
+            for sf in children
+        ]
+
+        # Files
+        if is_shared:
+            file_qs = File.objects.filter(parent=folder).order_by('display_name')
+        else:
+            file_qs = File.objects.filter(
+                parent=folder, owner=request.user).order_by('display_name')
+
+        files = [
+            {
+                'id': f.id, 'name': f.display_name, 'type': 'file',
+                'size': f.file.size if f.file else 0,
+                'content_type': f.content_type or '',
+            }
+            for f in file_qs
+        ]
+
+        response = {
+            'folder': {'id': folder.id, 'name': folder.name or 'My files'},
+            'breadcrumbs': breadcrumbs,
+            'items': subfolders + files,
+        }
+
+        # Shared folders at root
+        if not folder_id or folder.full_path == f"/{request.user.username}/":
+            memberships = SharedFolderMembership.objects.filter(
+                user=request.user
+            ).select_related('shared_folder__root_folder')
+            shared = [
+                {'id': m.shared_folder.root_folder.id,
+                 'name': m.shared_folder.name, 'type': 'shared'}
+                for m in memberships
+            ]
+            response['shared'] = shared
+
+        return JsonResponse(response)
+
+
 class MailComposeView(LoginRequiredMixin, View):
     def get(self, request):
         Mailbox.ensure_defaults(request.user)
@@ -2124,10 +2195,12 @@ class MailComposeView(LoginRequiredMixin, View):
 
 class MailSendView(LoginRequiredMixin, View):
     def post(self, request):
-        import uuid
         import smtplib
+        import mimetypes
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders
         from email.utils import formatdate, make_msgid
 
         to_addresses = request.POST.get('to', '').strip()
@@ -2143,8 +2216,44 @@ class MailSendView(LoginRequiredMixin, View):
 
         from_address = request.user.email or f'{request.user.username}@localhost'
 
+        # Collect attachments
+        attachment_data = []  # list of (filename, content_type, data_bytes)
+
+        # Local file uploads
+        for f in request.FILES.getlist('attachments'):
+            attachment_data.append((
+                f.name,
+                f.content_type or 'application/octet-stream',
+                f.read(),
+            ))
+
+        # Djancloud file IDs
+        djancloud_ids = request.POST.get('djancloud_file_ids', '')
+        if djancloud_ids:
+            for fid in djancloud_ids.split(','):
+                fid = fid.strip()
+                if not fid:
+                    continue
+                try:
+                    db_file, _ = get_accessible_file(request, int(fid), permission='read')
+                    ct = db_file.content_type or 'application/octet-stream'
+                    attachment_data.append((
+                        db_file.display_name,
+                        ct,
+                        db_file.file.read(),
+                    ))
+                except Exception:
+                    pass
+
         # Build MIME message
-        msg = MIMEMultipart('alternative')
+        has_attachments = len(attachment_data) > 0
+        if has_attachments:
+            msg = MIMEMultipart('mixed')
+            body_part = MIMEMultipart('alternative')
+        else:
+            msg = MIMEMultipart('alternative')
+            body_part = msg
+
         msg['From'] = from_address
         msg['To'] = to_addresses
         if cc_addresses:
@@ -2157,8 +2266,20 @@ class MailSendView(LoginRequiredMixin, View):
         # Plain text fallback
         import re
         body_text = re.sub(r'<[^>]+>', '', body_html)
-        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
-        msg.attach(MIMEText(body_html, 'html', 'utf-8'))
+        body_part.attach(MIMEText(body_text, 'plain', 'utf-8'))
+        body_part.attach(MIMEText(body_html, 'html', 'utf-8'))
+
+        if has_attachments:
+            msg.attach(body_part)
+
+        # Attach files
+        for filename, content_type, data in attachment_data:
+            maintype, subtype = content_type.split('/', 1) if '/' in content_type else ('application', 'octet-stream')
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(data)
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', 'attachment', filename=filename)
+            msg.attach(part)
 
         # Try to send via SMTP relay if configured
         smtp_host = getattr(settings, 'SMTP_RELAY_HOST', None)
@@ -2187,7 +2308,7 @@ class MailSendView(LoginRequiredMixin, View):
         # Store in Sent folder
         sent_box, _ = Mailbox.objects.get_or_create(
             owner=request.user, name='Sent', defaults={'system': True})
-        Email.objects.create(
+        email_obj = Email.objects.create(
             mailbox=sent_box,
             message_id=message_id,
             from_address=from_address,
@@ -2199,6 +2320,16 @@ class MailSendView(LoginRequiredMixin, View):
             raw_data=msg.as_string(),
             is_read=True,
         )
+
+        # Store attachments in DB
+        for filename, content_type, data in attachment_data:
+            EmailAttachment.objects.create(
+                email=email_obj,
+                filename=filename,
+                content_type=content_type,
+                data=data,
+                size=len(data),
+            )
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'ok': True, 'relayed': sent_ok})

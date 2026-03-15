@@ -35,7 +35,7 @@ from file.views import (
     ContactCreateView, ContactDeleteView,
     MailWebView, MailboxCreateView, MailboxRenameView, MailboxDeleteView,
     EmailDeleteView, EmailMoveView, TrashEmptyView, EmailAttachmentDownloadView,
-    MailComposeView, MailSendView, ContactSearchView,
+    MailComposeView, MailSendView, ContactSearchView, FilePickerView,
     SignatureListView, SignatureCreateView, SignatureUpdateView,
     SignatureDeleteView, SignatureContentView,
 )
@@ -165,4 +165,6 @@ urlpatterns = [
     path('mail/signatures/<int:sig_id>/delete/', SignatureDeleteView.as_view(), name='signature_delete'),
     path('mail/signatures/<int:sig_id>/content/', SignatureContentView.as_view(), name='signature_content'),
     path('api/contacts/search/', ContactSearchView.as_view(), name='contact_search'),
+    path('api/filepicker/', FilePickerView.as_view(), name='filepicker_root'),
+    path('api/filepicker/<int:folder_id>/', FilePickerView.as_view(), name='filepicker_folder'),
 ]
