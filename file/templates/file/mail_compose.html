@@ -75,7 +75,7 @@
             </div>
         </aside>
 
-        <!-- Compose form -->
+        <!-- Compose form (Vue app) -->
         <main class="flex-1 overflow-y-auto p-4 lg:p-6">
             <div class="max-w-4xl mx-auto">
                 <div class="mb-4 flex items-center justify-between">
@@ -83,162 +83,17 @@
                     <a href="{% url 'mail' %}" class="text-sm text-gray-500 hover:text-gray-700">Cancel</a>
                 </div>
 
-                <form id="compose-form" method="post" action="{% url 'mail_send' %}" enctype="multipart/form-data" class="rounded-xl border border-gray-200 bg-white shadow-sm">
-                    {% csrf_token %}
-
-                    <!-- To field with autocomplete -->
-                    <div class="border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-                        <label class="text-sm font-medium text-gray-500 w-10 flex-shrink-0">To</label>
-                        <div class="relative flex-1">
-                            <div id="to-tags" class="flex flex-wrap items-center gap-1 min-h-[2rem]">
-                                <input type="text" id="to-input" autocomplete="off" placeholder="Type name or email..."
-                                       class="flex-1 min-w-[200px] border-0 p-0 text-sm outline-none focus:ring-0"
-                                       {% if prefill.to %}value="{{ prefill.to }}"{% endif %}>
-                            </div>
-                            <input type="hidden" name="to" id="to-hidden" value="{{ prefill.to|default:'' }}">
-                            <div id="to-suggestions" class="hidden absolute left-0 top-full mt-1 z-50 w-full max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
-                        </div>
-                    </div>
-
-                    <!-- Cc field -->
-                    <div class="border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-                        <label class="text-sm font-medium text-gray-500 w-10 flex-shrink-0">Cc</label>
-                        <div class="relative flex-1">
-                            <div id="cc-tags" class="flex flex-wrap items-center gap-1 min-h-[2rem]">
-                                <input type="text" id="cc-input" autocomplete="off" placeholder="Add Cc..."
-                                       class="flex-1 min-w-[200px] border-0 p-0 text-sm outline-none focus:ring-0">
-                            </div>
-                            <input type="hidden" name="cc" id="cc-hidden" value="">
-                            <div id="cc-suggestions" class="hidden absolute left-0 top-full mt-1 z-50 w-full max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
-                        </div>
-                    </div>
-
-                    <!-- Subject -->
-                    <div class="border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-                        <label class="text-sm font-medium text-gray-500 w-10 flex-shrink-0">Subj</label>
-                        <input type="text" name="subject" id="subject-input" placeholder="Subject"
-                               value="{{ prefill.subject|default:'' }}"
-                               class="flex-1 border-0 p-0 text-sm outline-none focus:ring-0">
-                    </div>
-
-                    <!-- Signature selector -->
-                    {% if signatures %}
-                    <div class="border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-                        <label class="text-sm font-medium text-gray-500 flex-shrink-0">Signature</label>
-                        <select id="signature-select" class="rounded-lg border border-gray-300 px-2 py-1 text-sm">
-                            <option value="">None</option>
-                            {% for sig in signatures %}
-                            <option value="{{ sig.id }}" {% if default_signature and default_signature.id == sig.id %}selected{% endif %}>{{ sig.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    {% endif %}
-
-                    <!-- WYSIWYG Toolbar -->
-                    <div id="editor-toolbar" class="border-b border-gray-100 px-4 py-1.5 flex items-center gap-1 flex-wrap">
-                        <button type="button" data-cmd="bold" title="Bold"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z"/><path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z"/></svg>
-                        </button>
-                        <button type="button" data-cmd="italic" title="Italic"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
-                        </button>
-                        <button type="button" data-cmd="underline" title="Underline"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 3v7a6 6 0 006 6 6 6 0 006-6V3"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
-                        </button>
-                        <div class="w-px h-5 bg-gray-200 mx-1"></div>
-                        <button type="button" data-cmd="insertUnorderedList" title="Bullet list"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
-                        </button>
-                        <button type="button" data-cmd="insertOrderedList" title="Numbered list"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="1" y="8" font-size="8" fill="currentColor" stroke="none">1</text><text x="1" y="14" font-size="8" fill="currentColor" stroke="none">2</text><text x="1" y="20" font-size="8" fill="currentColor" stroke="none">3</text></svg>
-                        </button>
-                        <div class="w-px h-5 bg-gray-200 mx-1"></div>
-                        <button type="button" data-cmd="createLink" title="Insert link"
-                                class="toolbar-btn rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-                        </button>
-                        <div class="w-px h-5 bg-gray-200 mx-1"></div>
-                        <select id="format-block" title="Paragraph format"
-                                class="rounded border border-gray-300 px-1 py-0.5 text-xs text-gray-600">
-                            <option value="p">Paragraph</option>
-                            <option value="h1">Heading 1</option>
-                            <option value="h2">Heading 2</option>
-                            <option value="h3">Heading 3</option>
-                        </select>
-                        <select id="font-size" title="Font size"
-                                class="rounded border border-gray-300 px-1 py-0.5 text-xs text-gray-600">
-                            <option value="3">Normal</option>
-                            <option value="1">Small</option>
-                            <option value="5">Large</option>
-                            <option value="7">Huge</option>
-                        </select>
-                        <div class="w-px h-5 bg-gray-200 mx-1"></div>
-                        <input type="color" id="text-color" value="#000000" title="Text color"
-                               class="w-6 h-6 rounded border border-gray-300 cursor-pointer p-0">
-                    </div>
-
-                    <!-- Editor area -->
-                    <div id="editor" contenteditable="true"
-                         class="px-4 py-4 min-h-[350px] text-sm text-gray-800 outline-none focus:ring-0 prose max-w-none"
-                         data-placeholder="Write your message...">
-                        {% if prefill.quote %}
-                        <br><br>
-                        <blockquote style="border-left: 3px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
-                            {{ prefill.quote|safe }}
-                        </blockquote>
-                        {% endif %}
-                    </div>
-
-                    <!-- Signature preview -->
-                    <div id="signature-preview" class="px-4 pb-2">
-                        {% if default_signature %}
-                        <div class="border-t border-gray-100 pt-2 text-sm text-gray-500">
-                            {{ default_signature.html_content|safe }}
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    <input type="hidden" name="body_html" id="body-html-hidden">
-
-                    <!-- Attachments -->
-                    <div class="border-t border-gray-100 px-4 py-3">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Attachments</span>
-                            <label class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                                </svg>
-                                From computer
-                                <input type="file" id="local-file-input" multiple class="hidden">
-                            </label>
-                            <button type="button" id="djancloud-attach-btn"
-                                    class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                                </svg>
-                                From Djancloud
-                            </button>
-                        </div>
-                        <div id="attachment-list" class="flex flex-wrap gap-2"></div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="border-t border-gray-100 px-4 py-3 flex items-center justify-between">
-                        <button type="submit" id="send-btn"
-                                class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                            </svg>
-                            Send
-                        </button>
-                        <a href="{% url 'mail' %}" class="text-sm text-gray-500 hover:text-gray-700">Discard</a>
-                    </div>
-                </form>
+                <div id="mail-compose-app"
+                     class="rounded-xl border border-gray-200 bg-white shadow-sm"
+                     data-csrf-token="{{ csrf_token }}"
+                     data-send-url="{% url 'mail_send' %}"
+                     data-prefill-to="{{ prefill.to|default:'' }}"
+                     data-prefill-subject="{{ prefill.subject|default:'' }}"
+                     data-prefill-quote="{{ prefill.quote|default:'' }}"
+                     data-signatures="{{ signatures_json }}"
+                     data-default-signature-id="{{ default_signature.id|default:'' }}"
+                     data-default-signature-html="{{ default_signature.html_content|default:'' }}">
+                </div>
             </div>
         </main>
     </div>
@@ -246,35 +101,6 @@
     <footer class="border-t border-gray-200 bg-white px-4 py-3 text-center text-xs text-gray-400">
         Djancloud &mdash; Nextcloud-compatible file server powered by Django
     </footer>
-</div>
-
-<!-- Djancloud file picker modal -->
-<div id="file-picker-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
-    <div class="w-full max-w-lg rounded-xl bg-white shadow-xl flex flex-col" style="max-height: 80vh" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-            <h3 class="text-lg font-semibold text-gray-900">Attach from Djancloud</h3>
-            <button type="button" id="file-picker-close" class="rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-        </div>
-
-        <!-- Breadcrumb -->
-        <div id="picker-breadcrumb" class="border-b border-gray-100 px-5 py-2 flex items-center gap-1 text-sm text-gray-500 overflow-x-auto"></div>
-
-        <!-- File/folder list -->
-        <div id="picker-contents" class="flex-1 overflow-y-auto divide-y divide-gray-100"></div>
-
-        <div class="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-            <button type="button" id="file-picker-cancel"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button type="button" id="file-picker-attach" disabled
-                    class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                Attach selected
-            </button>
-        </div>
-    </div>
 </div>
 {% endblock %}
 

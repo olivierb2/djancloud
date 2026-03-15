@@ -75,15 +75,6 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
-                    {% if can_write %}
-                    <button onclick="openModal('event-modal')"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                        </svg>
-                        New event
-                    </button>
-                    {% endif %}
                     {% if selected_calendar.owner == user %}
                     <button onclick="openModal('share-modal')"
                             class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
@@ -107,50 +98,14 @@
                 </div>
             </div>
 
-            <!-- FullCalendar view -->
+            <!-- FullCalendar Vue app -->
             <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-                <div id="fullcalendar"
+                <div id="calendar-app"
                      data-events-url="{% url 'calendar_events_api' calendar_id=selected_calendar.id %}"
+                     data-create-url="{% url 'event_create' calendar_id=selected_calendar.id %}"
                      data-can-write="{{ can_write|yesno:'true,false' }}"
-                     data-calendar-color="{{ selected_calendar.color }}">
-                </div>
-            </div>
-
-            <!-- Event detail modal -->
-            <div id="event-detail" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
-                <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
-                    <h3 id="detail-title" class="text-lg font-semibold text-gray-900 mb-3"></h3>
-                    <div class="space-y-2 text-sm text-gray-600">
-                        <div class="flex gap-2">
-                            <span class="font-medium text-gray-500 w-20">Start:</span>
-                            <span id="detail-start"></span>
-                        </div>
-                        <div class="flex gap-2">
-                            <span class="font-medium text-gray-500 w-20">End:</span>
-                            <span id="detail-end"></span>
-                        </div>
-                        <div class="flex gap-2">
-                            <span class="font-medium text-gray-500 w-20">Location:</span>
-                            <span id="detail-location"></span>
-                        </div>
-                        <div id="detail-description" class="mt-2 text-gray-700"></div>
-                    </div>
-                    {% if can_write %}
-                    <form id="detail-delete-form" method="post" class="mt-4">
-                        {% csrf_token %}
-                        <button type="submit"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                            Delete
-                        </button>
-                    </form>
-                    {% endif %}
-                    <div class="flex justify-end mt-4">
-                        <button type="button" onclick="closeModal('event-detail')"
-                                class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
-                    </div>
+                     data-calendar-color="{{ selected_calendar.color }}"
+                     data-csrf-token="{{ csrf_token }}">
                 </div>
             </div>
 
@@ -200,48 +155,6 @@
     </div>
 </div>
 
-{% if selected_calendar and can_write %}
-<!-- New Event modal -->
-<div id="event-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
-    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">New event</h3>
-        <form method="post" action="{% url 'event_create' calendar_id=selected_calendar.id %}">
-            {% csrf_token %}
-            <div class="space-y-3">
-                <input type="text" name="summary" required maxlength="500" placeholder="Event title" autofocus
-                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-                <textarea name="description" rows="2" maxlength="2000" placeholder="Description (optional)"
-                          class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
-                <input type="text" name="location" maxlength="500" placeholder="Location (optional)"
-                       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" name="all_day" id="all-day-check" class="rounded border-gray-300"
-                           onchange="toggleAllDay()">
-                    <label for="all-day-check" class="text-sm text-gray-600">All day</label>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Start</label>
-                        <input type="datetime-local" name="dtstart" id="dtstart-input" required
-                               class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">End</label>
-                        <input type="datetime-local" name="dtend" id="dtend-input"
-                               class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-                    </div>
-                </div>
-            </div>
-            <div class="flex justify-end gap-2 mt-4">
-                <button type="button" onclick="closeModal('event-modal')"
-                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                <button type="submit"
-                        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Create</button>
-            </div>
-        </form>
-    </div>
-</div>
-{% endif %}
 
 {% if selected_calendar and selected_calendar.owner == user %}
 <!-- Share Calendar modal -->
@@ -304,19 +217,6 @@ function closeModal(id) {
     const m = document.getElementById(id);
     if (m) { m.classList.remove('flex'); m.classList.add('hidden'); }
 }
-function toggleAllDay() {
-    const allDay = document.getElementById('all-day-check').checked;
-    const start = document.getElementById('dtstart-input');
-    const end = document.getElementById('dtend-input');
-    if (allDay) {
-        start.type = 'date';
-        end.type = 'date';
-    } else {
-        start.type = 'datetime-local';
-        end.type = 'datetime-local';
-    }
-}
-// Close modals on backdrop click
 document.querySelectorAll('[id$="-modal"]').forEach(modal => {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal(modal.id);

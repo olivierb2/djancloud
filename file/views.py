@@ -1373,8 +1373,13 @@ class SharedFolderMemberDeleteView(LoginRequiredMixin, View):
 
 class UserListView(LoginRequiredMixin, View):
     def get(self, request):
-        users = User.objects.order_by('username').values('id', 'username', 'role', 'is_active')
-        return JsonResponse({'users': list(users)})
+        users = User.objects.order_by('username')
+        return JsonResponse({'users': [
+            {'id': u.id, 'username': u.username, 'first_name': u.first_name,
+             'last_name': u.last_name, 'full_name': u.get_full_name(),
+             'email': u.email, 'role': u.role, 'is_active': u.is_active}
+            for u in users
+        ]})
 
 
 class UserCreateView(LoginRequiredMixin, View):
@@ -1462,7 +1467,13 @@ class UserManagementView(LoginRequiredMixin, View):
 
     def get(self, request):
         users = User.objects.order_by('username')
-        return render(request, 'file/users.html', {'users': users})
+        users_json = json.dumps([
+            {'id': u.id, 'username': u.username, 'first_name': u.first_name,
+             'last_name': u.last_name, 'full_name': u.get_full_name(),
+             'email': u.email, 'role': u.role, 'is_active': u.is_active}
+            for u in users
+        ])
+        return render(request, 'file/users.html', {'users': users, 'users_json': users_json})
 
 
 class FileEditorView(LoginRequiredMixin, View):
@@ -2185,9 +2196,14 @@ class MailComposeView(LoginRequiredMixin, View):
                 prefill['subject'] = f'Fwd: {orig.subject}' if not orig.subject.startswith('Fwd:') else orig.subject
                 prefill['quote'] = orig.body_html or orig.body_text or ''
 
+        signatures_json = json.dumps([
+            {'id': s.id, 'name': s.name} for s in signatures
+        ])
+
         return render(request, 'file/mail_compose.html', {
             'mailboxes': mailboxes,
             'signatures': signatures,
+            'signatures_json': signatures_json,
             'default_signature': default_sig,
             'prefill': prefill,
         })
