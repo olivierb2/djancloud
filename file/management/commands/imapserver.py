@@ -95,6 +95,7 @@ class IMAPSession:
         self._emails_cache = []
 
     async def send(self, line):
+        print(f'S: {line[:500]}')
         self.writer.write((line + '\r\n').encode('utf-8'))
         await self.writer.drain()
 
@@ -110,7 +111,7 @@ class IMAPSession:
                 if not line:
                     continue
 
-                logger.debug('C: %s', line)
+                print(f'C: {line}')
                 await self.handle_line(line)
         except (ConnectionResetError, asyncio.IncompleteReadError):
             pass
@@ -388,6 +389,7 @@ class IMAPSession:
             return [(s, emails[s - 1]) for s in seqs if 1 <= s <= max_seq]
 
     async def _fetch(self, tag, rest, use_uid):
+        logger.debug('FETCH request: uid=%s rest=%r', use_uid, rest)
         if not self.selected_mailbox:
             await self.send(f'{tag} NO No mailbox selected')
             return
@@ -445,7 +447,19 @@ class IMAPSession:
 
             # Body/RFC822 fetch
             body_data = None
-            if 'RFC822' in items and 'RFC822.SIZE' not in items.replace('RFC822.SIZE', ''):
+            if 'RFC822.HEADER' in items:
+                header = self._extract_headers(email_obj)
+                parts_out.append(f'RFC822.HEADER {{{len(header.encode("utf-8"))}}}')
+                body_data = header
+            elif 'RFC822.TEXT' in items:
+                raw = email_obj.raw_data or ''
+                idx = raw.find('\r\n\r\n')
+                if idx == -1:
+                    idx = raw.find('\n\n')
+                text = raw[idx+2:] if idx >= 0 else raw
+                parts_out.append(f'RFC822.TEXT {{{len(text.encode("utf-8"))}}}')
+                body_data = text
+            elif re.search(r'\bRFC822\b', items) and not re.search(r'\bRFC822\.', items):
                 body_data = email_obj.raw_data
                 parts_out.append(f'RFC822 {{{len(body_data.encode("utf-8"))}}}')
             elif 'BODY[]' in items or 'BODY.PEEK[]' in items:
@@ -474,6 +488,19 @@ class IMAPSession:
                 text = email_obj.body_text or email_obj.body_html or ''
                 parts_out.append(f'BODY[TEXT] {{{len(text.encode("utf-8"))}}}')
                 body_data = text
+            elif re.search(r'BODY(?:\.PEEK)?\[(\d[\d.]*?)(?:\.MIME)?\]', items):
+                # Handle BODY[1], BODY[1.1], BODY[2], BODY[1.MIME], etc.
+                m = re.search(r'BODY(?:\.PEEK)?\[(\d[\d.]*?)(\.MIME)?\]', items)
+                section = m.group(1)
+                want_mime = m.group(2) is not None
+                part_data = self._get_mime_part(email_obj, section, want_mime)
+                key = f'BODY[{section}{".MIME" if want_mime else ""}]'
+                if part_data is not None:
+                    encoded = part_data.encode('utf-8') if isinstance(part_data, str) else part_data
+                    parts_out.append(f'{key} {{{len(encoded)}}}')
+                    body_data = part_data if isinstance(part_data, str) else part_data.decode('utf-8', errors='replace')
+                else:
+                    parts_out.append(f'{key} ""')
             elif 'BODYSTRUCTURE' in items or 'BODY' in re.split(r'[\s\[]', items):
                 bs = self._build_bodystructure(email_obj)
                 if 'BODYSTRUCTURE' in items:
@@ -481,12 +508,20 @@ class IMAPSession:
                 elif 'BODY' in items and not any(x in items for x in ['BODY[', 'BODY.PEEK']):
                     parts_out.append(f'BODY {bs}')
 
-            resp = f'* {seq_num} FETCH ({" ".join(parts_out)})'
-            await self.send(resp)
             if body_data is not None:
-                self.writer.write(body_data.encode('utf-8'))
-                self.writer.write(b'\r\n')
+                # IMAP literal format: after {size}\r\n the literal bytes
+                # follow immediately, then the closing paren for FETCH
+                encoded_body = body_data.encode('utf-8') if isinstance(body_data, str) else body_data
+                line = f'* {seq_num} FETCH ({" ".join(parts_out)}\r\n'
+                logger.debug('FETCH response (literal): %s...', line[:200])
+                self.writer.write(line.encode('utf-8'))
+                self.writer.write(encoded_body)
+                self.writer.write(b')\r\n')
                 await self.writer.drain()
+            else:
+                resp = f'* {seq_num} FETCH ({" ".join(parts_out)})'
+                logger.debug('FETCH response: %s', resp[:300])
+                await self.send(resp)
 
         await self.send(f'{tag} OK FETCH completed')
 
@@ -551,13 +586,150 @@ class IMAPSession:
         return '\r\n'.join(result) + '\r\n\r\n' if result else '\r\n'
 
     def _build_bodystructure(self, email_obj):
-        """Build a minimal BODYSTRUCTURE."""
-        if email_obj.body_html:
-            return '("TEXT" "HTML" ("CHARSET" "UTF-8") NIL NIL "8BIT" ' \
-                   f'{len(email_obj.body_html.encode("utf-8"))} {email_obj.body_html.count(chr(10))})'
-        text = email_obj.body_text or ''
-        return '("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "8BIT" ' \
-               f'{len(text.encode("utf-8"))} {text.count(chr(10))})'
+        """Build BODYSTRUCTURE response.
+
+        If the email has raw_data, parse the actual MIME structure.
+        Otherwise build a minimal structure from body_text/body_html.
+        """
+        if email_obj.raw_data:
+            try:
+                return self._bodystructure_from_raw(email_obj.raw_data)
+            except Exception:
+                pass
+
+        has_text = bool(email_obj.body_text)
+        has_html = bool(email_obj.body_html)
+        has_attachments = email_obj.attachments.exists()
+
+        text_part = None
+        html_part = None
+        if has_text:
+            t = email_obj.body_text
+            text_part = f'("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "8BIT" {len(t.encode("utf-8"))} {t.count(chr(10))})'
+        if has_html:
+            h = email_obj.body_html
+            html_part = f'("TEXT" "HTML" ("CHARSET" "UTF-8") NIL NIL "8BIT" {len(h.encode("utf-8"))} {h.count(chr(10))})'
+
+        if has_text and has_html:
+            alt = f'({text_part} {html_part} "ALTERNATIVE")'
+        elif has_html:
+            alt = html_part
+        else:
+            alt = text_part or '("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 0 0)'
+
+        if has_attachments:
+            att_parts = []
+            for att in email_obj.attachments.all():
+                ct = (att.content_type or 'application/octet-stream').split('/')
+                main = ct[0].upper() if ct else 'APPLICATION'
+                sub = ct[1].upper() if len(ct) > 1 else 'OCTET-STREAM'
+                att_parts.append(
+                    f'("{main}" "{sub}" ("NAME" "{att.filename}") NIL NIL "BASE64" {att.size} NIL '
+                    f'("ATTACHMENT" ("FILENAME" "{att.filename}")))'
+                )
+            return f'({alt} {" ".join(att_parts)} "MIXED")'
+
+        return alt
+
+    def _get_mime_part(self, email_obj, section, want_mime=False):
+        """Get a specific MIME part by section number (e.g. '1', '1.1', '2').
+
+        IMAP section numbering: for multipart/alternative with text+html,
+        section 1 = text/plain, section 2 = text/html.
+        For non-multipart messages, section 1 = the body.
+        """
+        if email_obj.raw_data:
+            try:
+                import email as email_mod
+                msg = email_mod.message_from_string(
+                    email_obj.raw_data, policy=email_mod.policy.default)
+                part = self._navigate_to_part(msg, section)
+                if part is None:
+                    return ''
+                if want_mime:
+                    # Return MIME headers for this part
+                    headers = []
+                    for key, val in part.items():
+                        headers.append(f'{key}: {val}')
+                    return '\r\n'.join(headers) + '\r\n\r\n'
+                payload = part.get_content()
+                if isinstance(payload, bytes):
+                    return payload.decode('utf-8', errors='replace')
+                return payload or ''
+            except Exception:
+                pass
+
+        # Fallback for emails without raw_data
+        parts = [email_obj.body_text, email_obj.body_html]
+        parts = [p for p in parts if p]
+        try:
+            idx = int(section.split('.')[0]) - 1
+            if 0 <= idx < len(parts):
+                return parts[idx]
+        except (ValueError, IndexError):
+            pass
+        return ''
+
+    def _navigate_to_part(self, msg, section):
+        """Navigate MIME tree to find part at given section number."""
+        indices = [int(x) for x in section.split('.')]
+        current = msg
+        for idx in indices:
+            if current.is_multipart():
+                payload = current.get_payload()
+                if 1 <= idx <= len(payload):
+                    current = payload[idx - 1]
+                else:
+                    return None
+            else:
+                if idx == 1:
+                    return current
+                return None
+        return current
+
+    def _bodystructure_from_raw(self, raw_data):
+        """Parse raw MIME message into BODYSTRUCTURE."""
+        import email as email_mod
+        import email.policy
+        msg = email_mod.message_from_string(raw_data, policy=email_mod.policy.default)
+        return self._mime_to_bodystructure(msg)
+
+    def _mime_to_bodystructure(self, part):
+        """Recursively convert a MIME part to IMAP BODYSTRUCTURE string."""
+        maintype = part.get_content_maintype().upper()
+        subtype = part.get_content_subtype().upper()
+
+        if part.is_multipart():
+            children = ' '.join(self._mime_to_bodystructure(p) for p in part.get_payload())
+            return f'({children} "{subtype}")'
+
+        # Leaf part
+        charset = part.get_content_charset() or 'UTF-8'
+        encoding = (part.get('Content-Transfer-Encoding') or '7BIT').upper()
+        disp = part.get_content_disposition()
+        filename = part.get_filename()
+        try:
+            body = part.get_content()
+            if isinstance(body, str):
+                size = len(body.encode('utf-8'))
+                lines = body.count('\n')
+            else:
+                size = len(body)
+                lines = 0
+        except Exception:
+            size = 0
+            lines = 0
+
+        params = f'("CHARSET" "{charset.upper()}")' if maintype == 'TEXT' else 'NIL'
+        disp_str = 'NIL'
+        if disp == 'attachment' and filename:
+            disp_str = f'("ATTACHMENT" ("FILENAME" "{filename}"))'
+
+        bs = f'("{maintype}" "{subtype}" {params} NIL NIL "{encoding}" {size}'
+        if maintype == 'TEXT':
+            bs += f' {lines}'
+        bs += f' NIL {disp_str})'
+        return bs
 
     async def cmd_SEARCH(self, tag, rest):
         await self._search(tag, rest, use_uid=False)
