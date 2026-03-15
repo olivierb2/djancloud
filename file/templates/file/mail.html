@@ -1,0 +1,319 @@
+{% extends "file/base.html" %}
+
+{% block title %}Mail - Djancloud{% endblock %}
+
+{% block body %}
+<div class="flex h-full min-h-screen flex-col">
+
+    {% include "file/_navbar.html" with active_nav='mail' %}
+
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Sidebar: Mailboxes -->
+        <aside class="hidden lg:flex w-56 flex-col border-r border-gray-200 bg-white overflow-y-auto">
+            <div class="px-3 py-4">
+                <div class="flex items-center justify-between mb-3 px-2">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Folders</h2>
+                    <button onclick="openModal('folder-modal')"
+                            class="rounded p-1 text-gray-400 hover:text-brand-600 hover:bg-gray-100" title="New folder">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                    </button>
+                </div>
+                {% for mb in mailboxes %}
+                <a href="?mailbox={{ mb.name }}"
+                   class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
+                          {% if selected_mailbox and selected_mailbox.id == mb.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                    {% if mb.name == 'INBOX' %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                    </svg>
+                    {% elif mb.name == 'Sent' %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    {% elif mb.name == 'Drafts' %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                    {% elif mb.name == 'Trash' %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    {% elif mb.name == 'Junk' %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                    {% else %}
+                    <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    {% endif %}
+                    <span class="truncate flex-1">{{ mb.name }}</span>
+                    {% if mb.unread_count %}
+                    <span class="ml-auto min-w-[1.25rem] rounded-full bg-brand-600 px-1.5 py-0.5 text-center text-xs font-medium text-white leading-none">{{ mb.unread_count }}</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </aside>
+
+        {% if selected_email %}
+        <!-- Email detail view -->
+        <main class="flex-1 overflow-y-auto p-4 lg:p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <a href="?mailbox={{ selected_mailbox.name }}"
+                   class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    Back to {{ selected_mailbox.name }}
+                </a>
+                <div class="flex items-center gap-2">
+                    <!-- Move to folder -->
+                    <form method="post" action="{% url 'email_move' email_id=selected_email.id %}" class="inline-flex items-center gap-1">
+                        {% csrf_token %}
+                        <select name="mailbox" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                            {% for mb in mailboxes %}
+                            {% if mb.id != selected_mailbox.id %}
+                            <option value="{{ mb.name }}">{{ mb.name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="submit" title="Move"
+                                class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            Move
+                        </button>
+                    </form>
+                    <!-- Delete -->
+                    <form method="post" action="{% url 'email_delete' email_id=selected_email.id %}">
+                        {% csrf_token %}
+                        <button type="submit" title="{% if selected_mailbox.name == 'Trash' %}Delete permanently{% else %}Move to Trash{% endif %}"
+                                {% if selected_mailbox.name == 'Trash' %}onclick="return confirm('Permanently delete this email?')"{% endif %}
+                                class="rounded-lg border border-gray-300 bg-white p-2 text-red-600 hover:bg-red-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-100 px-6 py-4">
+                    <h1 class="text-lg font-semibold text-gray-900">{{ selected_email.subject|default:"(no subject)" }}</h1>
+                    <p class="mt-1 text-sm text-gray-500">
+                        From: <span class="text-gray-700">{{ selected_email.from_address }}</span>
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        To: <span class="text-gray-700">{{ selected_email.to_addresses }}</span>
+                    </p>
+                    {% if selected_email.cc_addresses %}
+                    <p class="text-sm text-gray-500">
+                        Cc: <span class="text-gray-700">{{ selected_email.cc_addresses }}</span>
+                    </p>
+                    {% endif %}
+                    <p class="text-xs text-gray-400 mt-1">{{ selected_email.received_at }}</p>
+                </div>
+
+                <div class="px-6 py-4">
+                    {% if selected_email.body_html %}
+                    <div class="prose max-w-none">
+                        <iframe id="email-frame" srcdoc="{{ selected_email.body_html }}"
+                                class="w-full border-0" style="min-height: 300px"
+                                sandbox="allow-same-origin"
+                                onload="this.style.height = this.contentDocument.body.scrollHeight + 'px'"></iframe>
+                    </div>
+                    {% else %}
+                    <pre class="whitespace-pre-wrap text-sm text-gray-700 font-sans">{{ selected_email.body_text }}</pre>
+                    {% endif %}
+                </div>
+
+                {% if selected_email.attachments.exists %}
+                <div class="border-t border-gray-100 px-6 py-4">
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Attachments</h3>
+                    <div class="flex flex-wrap gap-2">
+                        {% for att in selected_email.attachments.all %}
+                        <a href="{% url 'email_attachment_download' attachment_id=att.id %}"
+                           class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                            </svg>
+                            {{ att.filename }}
+                            <span class="text-xs text-gray-400">({{ att.size|filesizeformat }})</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </main>
+
+        {% elif selected_mailbox %}
+        <!-- Email list -->
+        <main class="flex-1 overflow-y-auto p-4 lg:p-6">
+
+            {% if messages %}
+            <div class="mb-4 space-y-2">
+                {% for message in messages %}
+                <div class="rounded-lg px-4 py-3 text-sm
+                    {% if message.tags == 'success' %}bg-green-50 text-green-800 border border-green-200
+                    {% elif message.tags == 'error' %}bg-red-50 text-red-800 border border-red-200
+                    {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="mb-4 flex items-center justify-between">
+                <h1 class="text-xl font-semibold text-gray-900">{{ selected_mailbox.name }}</h1>
+                <div class="flex items-center gap-2">
+                    {% if selected_mailbox.name == 'Trash' %}
+                    <form method="post" action="{% url 'trash_empty' %}" onsubmit="return confirm('Permanently delete all emails in Trash?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                            Empty Trash
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if not selected_mailbox.system %}
+                    <button onclick="openModal('rename-folder-modal')"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                        Rename
+                    </button>
+                    <form method="post" action="{% url 'mailbox_delete' mailbox_id=selected_mailbox.id %}"
+                          onsubmit="return confirm('Delete folder \'{{ selected_mailbox.name|escapejs }}\' and all its emails?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
+                            Delete folder
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div class="divide-y divide-gray-100">
+                    {% for mail in emails %}
+                    <a href="?mailbox={{ selected_mailbox.name }}&email={{ mail.id }}"
+                       class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors
+                              {% if not mail.is_read %}bg-blue-50/30{% endif %}">
+                        <div class="flex-shrink-0">
+                            {% if not mail.is_read %}
+                            <div class="w-2 h-2 rounded-full bg-brand-600"></div>
+                            {% else %}
+                            <div class="w-2 h-2"></div>
+                            {% endif %}
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm {% if not mail.is_read %}font-semibold text-gray-900{% else %}font-medium text-gray-700{% endif %} truncate">
+                                    {{ mail.from_address|truncatechars:40 }}
+                                </span>
+                                <span class="ml-auto text-xs text-gray-400 flex-shrink-0">{{ mail.received_at|timesince }} ago</span>
+                            </div>
+                            <p class="text-sm {% if not mail.is_read %}font-medium text-gray-800{% else %}text-gray-600{% endif %} truncate">
+                                {{ mail.subject|default:"(no subject)" }}
+                            </p>
+                            <p class="text-xs text-gray-400 truncate">{{ mail.body_text|truncatechars:100 }}</p>
+                        </div>
+                        {% if mail.attachments.exists %}
+                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                        </svg>
+                        {% endif %}
+                    </a>
+                    {% empty %}
+                    <div class="px-4 py-12 text-center text-sm text-gray-400">
+                        <svg class="mx-auto mb-2 w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        No emails in this folder
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+
+        {% else %}
+        <main class="flex-1 flex flex-col items-center justify-center py-20 text-gray-400">
+            <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+            </svg>
+            <p class="text-lg font-medium text-gray-500">Select a folder</p>
+        </main>
+        {% endif %}
+
+    </div>
+
+    <footer class="border-t border-gray-200 bg-white px-4 py-3 text-center text-xs text-gray-400">
+        Djancloud &mdash; Nextcloud-compatible file server powered by Django
+    </footer>
+</div>
+
+<!-- New Folder modal -->
+<div id="folder-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">New folder</h3>
+        <form method="post" action="{% url 'mailbox_create' %}">
+            {% csrf_token %}
+            <input type="text" name="name" required maxlength="255" placeholder="Folder name" autofocus
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeModal('folder-modal')"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_mailbox and not selected_mailbox.system %}
+<!-- Rename Folder modal -->
+<div id="rename-folder-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Rename folder</h3>
+        <form method="post" action="{% url 'mailbox_rename' mailbox_id=selected_mailbox.id %}">
+            {% csrf_token %}
+            <input type="text" name="name" required maxlength="255" value="{{ selected_mailbox.name }}" autofocus
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeModal('rename-folder-modal')"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Rename</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openModal(id) {
+    const m = document.getElementById(id);
+    if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
+}
+function closeModal(id) {
+    const m = document.getElementById(id);
+    if (m) { m.classList.remove('flex'); m.classList.add('hidden'); }
+}
+document.querySelectorAll('[id$="-modal"]').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal(modal.id);
+    });
+});
+</script>
+{% endblock %}

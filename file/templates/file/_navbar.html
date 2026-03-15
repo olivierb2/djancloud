@@ -30,6 +30,16 @@
                 </svg>
                 Calendar
             </a>
+            <a href="{% url 'mail' %}"
+               class="flex flex-col items-center px-3 py-1 rounded-md text-xs font-medium transition-colors
+                      {% if active_nav == 'mail' %}bg-white/20 text-white{% else %}text-white/70 hover:bg-white/10 hover:text-white{% endif %}"
+               title="Mail">
+                <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                Mail
+            </a>
             <a href="{% url 'contacts' %}"
                class="flex flex-col items-center px-3 py-1 rounded-md text-xs font-medium transition-colors
                       {% if active_nav == 'contacts' %}bg-white/20 text-white{% else %}text-white/70 hover:bg-white/10 hover:text-white{% endif %}"

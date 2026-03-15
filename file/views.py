@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.contrib import messages
 from django.db import transaction
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 from django.core.files.base import ContentFile
 import base64
@@ -16,6 +17,7 @@ from .models import (
     User, AppToken, LoginToken, Folder, File, SharedFolder, SharedFolderMembership,
     Calendar, CalendarShare, Event,
     AddressBook, AddressBookShare, Contact,
+    Mailbox, Email, EmailAttachment,
 )
 from django.views import View
 from djangodav.views.views import DavView
@@ -1880,3 +1882,152 @@ class ContactDeleteView(LoginRequiredMixin, View):
         contact.delete()
         messages.success(request, 'Contact deleted.')
         return redirect(f'/contacts/?addressbook={ab.id}')
+
+
+# ─── Mail Web Views ──────────────────────────────────────────
+
+def _get_sorted_mailboxes(user):
+    """Return mailboxes sorted: system folders first in fixed order, then custom."""
+    from .models import SYSTEM_MAILBOXES
+    mailboxes = list(Mailbox.objects.filter(owner=user))
+    system_order = {name: i for i, name in enumerate(SYSTEM_MAILBOXES)}
+
+    def sort_key(mb):
+        if mb.name in system_order:
+            return (0, system_order[mb.name])
+        return (1, mb.name.lower())
+
+    mailboxes.sort(key=sort_key)
+    return mailboxes
+
+
+class MailWebView(LoginRequiredMixin, View):
+    def get(self, request):
+        Mailbox.ensure_defaults(request.user)
+
+        mailbox_name = request.GET.get('mailbox', 'INBOX')
+        mailbox = Mailbox.objects.filter(owner=request.user, name=mailbox_name).first()
+        mailboxes = _get_sorted_mailboxes(request.user)
+
+        selected_email = None
+        emails = []
+        if mailbox:
+            emails = mailbox.emails.all()
+            email_id = request.GET.get('email')
+            if email_id:
+                selected_email = Email.objects.filter(id=email_id, mailbox=mailbox).first()
+                if selected_email and not selected_email.is_read:
+                    selected_email.is_read = True
+                    selected_email.save(update_fields=['is_read'])
+
+        # Unread counts per mailbox
+        unread_counts = dict(
+            Email.objects.filter(mailbox__owner=request.user, is_read=False)
+            .values_list('mailbox_id')
+            .annotate(count=models.Count('id'))
+            .values_list('mailbox_id', 'count')
+        )
+        for mb in mailboxes:
+            mb.unread_count = unread_counts.get(mb.id, 0)
+
+        return render(request, 'file/mail.html', {
+            'mailboxes': mailboxes,
+            'selected_mailbox': mailbox,
+            'emails': emails,
+            'selected_email': selected_email,
+        })
+
+
+class MailboxCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        name = request.POST.get('name', '').strip()
+        if not name:
+            messages.error(request, 'Folder name is required.')
+            return redirect('/mail/')
+        if Mailbox.objects.filter(owner=request.user, name=name).exists():
+            messages.error(request, f'Folder "{name}" already exists.')
+            return redirect('/mail/')
+        Mailbox.objects.create(owner=request.user, name=name, system=False)
+        return redirect(f'/mail/?mailbox={name}')
+
+
+class MailboxRenameView(LoginRequiredMixin, View):
+    def post(self, request, mailbox_id):
+        mb = get_object_or_404(Mailbox, id=mailbox_id, owner=request.user)
+        if mb.system:
+            messages.error(request, 'Cannot rename system folders.')
+            return redirect(f'/mail/?mailbox={mb.name}')
+        new_name = request.POST.get('name', '').strip()
+        if not new_name:
+            messages.error(request, 'Folder name is required.')
+            return redirect(f'/mail/?mailbox={mb.name}')
+        if Mailbox.objects.filter(owner=request.user, name=new_name).exclude(id=mb.id).exists():
+            messages.error(request, f'Folder "{new_name}" already exists.')
+            return redirect(f'/mail/?mailbox={mb.name}')
+        mb.name = new_name
+        mb.save(update_fields=['name'])
+        return redirect(f'/mail/?mailbox={new_name}')
+
+
+class MailboxDeleteView(LoginRequiredMixin, View):
+    def post(self, request, mailbox_id):
+        mb = get_object_or_404(Mailbox, id=mailbox_id, owner=request.user)
+        if mb.system:
+            messages.error(request, 'Cannot delete system folders.')
+            return redirect(f'/mail/?mailbox={mb.name}')
+        mb.delete()
+        return redirect('/mail/')
+
+
+class EmailDeleteView(LoginRequiredMixin, View):
+    def post(self, request, email_id):
+        mail = get_object_or_404(Email, id=email_id, mailbox__owner=request.user)
+        mailbox = mail.mailbox
+
+        # Move to Trash instead of deleting, unless already in Trash
+        if mailbox.name == 'Trash':
+            mail.delete()
+            msg = 'Email permanently deleted.'
+        else:
+            trash, _ = Mailbox.objects.get_or_create(
+                owner=request.user, name='Trash', defaults={'system': True})
+            mail.mailbox = trash
+            mail.save(update_fields=['mailbox_id'])
+            msg = 'Email moved to Trash.'
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'ok': True})
+        messages.success(request, msg)
+        return redirect(f'/mail/?mailbox={mailbox.name}')
+
+
+class EmailMoveView(LoginRequiredMixin, View):
+    def post(self, request, email_id):
+        mail = get_object_or_404(Email, id=email_id, mailbox__owner=request.user)
+        target_name = request.POST.get('mailbox', '').strip()
+        target = get_object_or_404(Mailbox, owner=request.user, name=target_name)
+        old_mailbox = mail.mailbox
+        mail.mailbox = target
+        mail.save(update_fields=['mailbox_id'])
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'ok': True})
+        messages.success(request, f'Email moved to {target.name}.')
+        return redirect(f'/mail/?mailbox={old_mailbox.name}')
+
+
+class TrashEmptyView(LoginRequiredMixin, View):
+    def post(self, request):
+        trash = Mailbox.objects.filter(owner=request.user, name='Trash').first()
+        if trash:
+            trash.emails.all().delete()
+        messages.success(request, 'Trash emptied.')
+        return redirect('/mail/?mailbox=Trash')
+
+
+class EmailAttachmentDownloadView(LoginRequiredMixin, View):
+    def get(self, request, attachment_id):
+        att = get_object_or_404(
+            EmailAttachment, id=attachment_id, email__mailbox__owner=request.user)
+        response = HttpResponse(att.data, content_type=att.content_type)
+        response['Content-Disposition'] = f'attachment; filename="{att.filename}"'
+        return response

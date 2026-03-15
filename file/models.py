@@ -370,3 +370,69 @@ class Contact(models.Model):
 
     def __str__(self):
         return f"{self.addressbook.owner.username}/{self.addressbook.name}/{self.fn or self.uid}"
+
+
+# Email Models
+
+SYSTEM_MAILBOXES = ['INBOX', 'Sent', 'Drafts', 'Trash', 'Junk']
+
+
+class Mailbox(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='mailboxes')
+    name = models.CharField(max_length=255, default='INBOX')
+    system = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('owner', 'name')]
+        ordering = ['name']
+
+    @property
+    def is_system(self):
+        return self.system
+
+    def __str__(self):
+        return f"{self.owner.username}/{self.name}"
+
+    @staticmethod
+    def ensure_defaults(user):
+        for name in SYSTEM_MAILBOXES:
+            Mailbox.objects.get_or_create(
+                owner=user, name=name, defaults={'system': True})
+
+
+class Email(models.Model):
+    mailbox = models.ForeignKey(
+        Mailbox, on_delete=models.CASCADE, related_name='emails')
+    message_id = models.CharField(max_length=512, blank=True, db_index=True)
+    from_address = models.CharField(max_length=500)
+    to_addresses = models.TextField()  # Comma-separated
+    cc_addresses = models.TextField(blank=True)
+    subject = models.CharField(max_length=1000, blank=True)
+    body_text = models.TextField(blank=True)
+    body_html = models.TextField(blank=True)
+    raw_data = models.TextField()  # Full raw email
+    is_read = models.BooleanField(default=False)
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-received_at']
+        indexes = [
+            models.Index(fields=['mailbox', '-received_at'], name='email_mailbox_date_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.subject or '(no subject)'} - {self.from_address}"
+
+
+class EmailAttachment(models.Model):
+    email = models.ForeignKey(
+        Email, on_delete=models.CASCADE, related_name='attachments')
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    data = models.BinaryField()
+    size = models.PositiveIntegerField()
+
+    def __str__(self):
+        return self.filename

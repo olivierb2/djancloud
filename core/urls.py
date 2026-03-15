@@ -33,6 +33,8 @@ from file.views import (
     ContactsWebView, AddressBookCreateView, AddressBookDeleteView,
     AddressBookShareAddView, AddressBookShareDeleteView,
     ContactCreateView, ContactDeleteView,
+    MailWebView, MailboxCreateView, MailboxRenameView, MailboxDeleteView,
+    EmailDeleteView, EmailMoveView, TrashEmptyView, EmailAttachmentDownloadView,
 )
 from file.caldav_views import (
     WellKnownCalDavView, WellKnownCardDavView,
@@ -141,4 +143,14 @@ urlpatterns = [
     path('contacts/addressbooks/<int:addressbook_id>/share/<int:user_id>/delete/', AddressBookShareDeleteView.as_view(), name='addressbook_share_delete'),
     path('contacts/<int:addressbook_id>/contacts/create/', ContactCreateView.as_view(), name='contact_create'),
     path('contacts/contact/<int:contact_id>/delete/', ContactDeleteView.as_view(), name='contact_delete'),
+
+    # Mail web UI
+    path('mail/', MailWebView.as_view(), name='mail'),
+    path('mail/folders/create/', MailboxCreateView.as_view(), name='mailbox_create'),
+    path('mail/folders/<int:mailbox_id>/rename/', MailboxRenameView.as_view(), name='mailbox_rename'),
+    path('mail/folders/<int:mailbox_id>/delete/', MailboxDeleteView.as_view(), name='mailbox_delete'),
+    path('mail/<int:email_id>/delete/', EmailDeleteView.as_view(), name='email_delete'),
+    path('mail/<int:email_id>/move/', EmailMoveView.as_view(), name='email_move'),
+    path('mail/trash/empty/', TrashEmptyView.as_view(), name='trash_empty'),
+    path('mail/attachment/<int:attachment_id>/', EmailAttachmentDownloadView.as_view(), name='email_attachment_download'),
 ]
