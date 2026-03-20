@@ -1,7 +1,7 @@
 from typing import Optional, Union
 from django.conf import settings
 from djangodav.base.resources import MetaEtagMixIn, BaseDavResource
-from .models import File, Folder, FileSystemItem, SharedFolder, SharedFolderMembership
+from .models import File, Folder, FileSystemItem, SharedFolder, SharedFolderMembership, ContactFolder
 from django.core.files.base import ContentFile
 import logging
 import mimetypes
@@ -29,17 +29,36 @@ class VirtualSharedRoot:
         return '/__shared__/'
 
 
+class VirtualContactsRoot:
+    """Virtual folder representing the __contacts__/ listing for a user."""
+    is_collection = True
+    is_object = False
+    pk = 0
+
+    def __init__(self, user):
+        from django.utils import timezone
+        self.user = user
+        self.full_path = '/__contacts__/'
+        self.created_at = timezone.now()
+        self.updated_at = timezone.now()
+
+    def __str__(self):
+        return '/__contacts__/'
+
+
 class MyDavResource(MetaEtagMixIn, BaseDavResource):
 
     ALL_PROPS = BaseDavResource.ALL_PROPS + ['getcontenttype', 'getetag']
 
     _object = None
     _shared_folder_cache = None
+    _display_name = None
 
     def __init__(self, path, user, create=False):
         self.db_path = path.strip("/")
         self.user = user
         self.is_shared = self.db_path == '__shared__' or self.db_path.startswith('__shared__/')
+        self.is_contact = self.db_path == '__contacts__' or self.db_path.startswith('__contacts__/')
         super().__init__(path)
 
     @property
@@ -83,8 +102,17 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
                 self._object = VirtualSharedRoot(self.user)
                 return self._object
 
-            if self.is_shared:
-                db_path = f"/{self.db_path}"
+            if self.db_path == '__contacts__':
+                self._object = VirtualContactsRoot(self.user)
+                return self._object
+
+            if self.is_shared or self.is_contact:
+                if self.is_contact:
+                    # __contacts__/<contact_id>/... -> /__contacts__/<username>/<contact_id>/...
+                    parts = self.db_path.split('/')
+                    db_path = f"/__contacts__/{self.user.username}/{'/'.join(parts[1:])}"
+                else:
+                    db_path = f"/{self.db_path}"
                 if db_path.endswith('/'):
                     db_path = db_path[:-1]
                 try:
@@ -119,6 +147,9 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
     def full_path(self) -> str:
         if self.is_shared:
             return f"/{self.db_path}"
+        if self.is_contact:
+            parts = self.db_path.split('/')
+            return f"/__contacts__/{self.user.username}/{'/'.join(parts[1:])}"
         return f"/{self.user.username}/{self.db_path}"
 
     def __repr__(self):
@@ -131,6 +162,11 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
         if obj.full_path.startswith('/__shared__/'):
             dav_path = obj.full_path.lstrip('/').rstrip('/')
             return MyDavResource(dav_path, self.user)
+        if obj.full_path.startswith('/__contacts__/'):
+            # /__contacts__/username/contact_id/... -> __contacts__/contact_id/...
+            parts = obj.full_path.strip('/').split('/')
+            dav_path = '__contacts__/' + '/'.join(parts[2:])
+            return MyDavResource(dav_path.rstrip('/'), self.user)
         if obj.full_path == f"/{self.user.username}/":
             dav_path = ""
         elif obj.full_path.startswith(f"/{self.user.username}/"):
@@ -141,6 +177,8 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
 
     @property
     def displayname(self):
+        if self._display_name:
+            return self._display_name
         if not self.path:
             return 'Root'
         return self.path[-1]
@@ -159,14 +197,13 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
     def getcontenttype(self):
         if self.object and isinstance(self.object, File):
             return self.object.content_type or 'application/octet-stream'
-        if self.object and isinstance(self.object, (Folder, VirtualSharedRoot)):
+        if self.object and isinstance(self.object, (Folder, VirtualSharedRoot, VirtualContactsRoot)):
             return 'httpd/unix-directory'
 
     @property
     def getetag(self):
         if isinstance(self.object, VirtualSharedRoot):
             from django.db.models import Max
-            # Include latest file/folder change across all shared folders the user has access to
             latest_membership = SharedFolderMembership.objects.filter(
                 user=self.user
             ).aggregate(m=Max('joined_at'))['m']
@@ -181,6 +218,18 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
                 timestamps.append(latest_folder)
             ts = int(max(timestamps).timestamp()) if timestamps else 0
             return f'"shared-{ts}"'
+        if isinstance(self.object, VirtualContactsRoot):
+            from django.db.models import Max
+            prefix = f"/__contacts__/{self.user.username}/"
+            latest_file = File.objects.filter(full_path__startswith=prefix).aggregate(m=Max('updated_at'))['m']
+            latest_folder = Folder.objects.filter(full_path__startswith=prefix).aggregate(m=Max('updated_at'))['m']
+            timestamps = []
+            if latest_file:
+                timestamps.append(latest_file)
+            if latest_folder:
+                timestamps.append(latest_folder)
+            ts = int(max(timestamps).timestamp()) if timestamps else 0
+            return f'"contacts-{ts}"'
         if self.object:
             if isinstance(self.object, Folder):
                 from django.db.models import Max
@@ -198,8 +247,12 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
 
     @property
     def oc_permissions(self):
-        if isinstance(self.object, VirtualSharedRoot):
+        if isinstance(self.object, (VirtualSharedRoot, VirtualContactsRoot)):
             return "RG"
+        if self.is_contact:
+            if isinstance(self.object, Folder):
+                return "RGDNVCK"
+            return "RGDNVW"
         if self.is_shared:
             perm = self._get_shared_permission()
             if perm in ('write', 'admin'):
@@ -231,7 +284,7 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
         import lxml.builder as lb
         props = []
         oc_maker = lb.ElementMaker(namespace=OC_NS)
-        if isinstance(self.object, VirtualSharedRoot):
+        if isinstance(self.object, (VirtualSharedRoot, VirtualContactsRoot)):
             props.append(oc_maker.id('00000000ocdjancloud'))
             props.append(oc_maker.fileid('0'))
             props.append(oc_maker.permissions(self.oc_permissions))
@@ -305,7 +358,17 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
                 except Folder.DoesNotExist:
                     logger.warning(f"Shared parent folder {db_path} not found")
                     return None
-            # Parent of __shared__/ShareName is the virtual root — not a real folder
+            return None
+
+        if self.is_contact:
+            if parent_path and parent_path != '__contacts__':
+                parts = parent_path.split('/')
+                db_path = f"/__contacts__/{self.user.username}/{'/'.join(parts[1:])}/"
+                try:
+                    return Folder.objects.get(full_path=db_path)
+                except Folder.DoesNotExist:
+                    logger.warning(f"Contact parent folder {db_path} not found")
+                    return None
             return None
 
         if parent_path:
@@ -354,10 +417,11 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
                 self._object = existing_file
             else:
                 logger.info(f"Creating new file {self.displayname} for user {self.user.username}")
+                file_owner = None if (self.is_shared or self.is_contact) else self.user
                 new_file = File.objects.create(
                     parent=self.parent,
                     file=file_obj,
-                    owner=self.user
+                    owner=file_owner
                 )
                 self._object = new_file
 
@@ -371,7 +435,7 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
 
     @property
     def is_collection(self):
-        return isinstance(self.object, (Folder, VirtualSharedRoot))
+        return isinstance(self.object, (Folder, VirtualSharedRoot, VirtualContactsRoot))
 
     @property
     def content_type(self):
@@ -388,7 +452,6 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
 
     def get_children(self):
         if isinstance(self.object, VirtualSharedRoot):
-            # List all shared folders the user has access to
             memberships = SharedFolderMembership.objects.filter(
                 user=self.user
             ).select_related('shared_folder__root_folder')
@@ -397,25 +460,36 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
                 yield self.obj_to_resource(sf.root_folder)
             return
 
+        if isinstance(self.object, VirtualContactsRoot):
+            contact_folders = ContactFolder.objects.filter(
+                owner=self.user
+            ).select_related('contact', 'folder')
+            for cf in contact_folders:
+                res = self.obj_to_resource(cf.folder)
+                res._display_name = cf.contact.fn or cf.contact.uid
+                yield res
+            return
+
         if isinstance(self.object, Folder):
-            if self.is_shared:
-                # Shared folder: no owner filter
+            if self.is_shared or self.is_contact:
                 for child in File.objects.filter(parent=self.object):
                     yield self.obj_to_resource(child)
                 for child in self.object.subfolders.all():
                     yield self.obj_to_resource(child)
             else:
-                # Personal folder: filter by owner
                 for child in File.objects.filter(parent=self.object, owner=self.user):
                     yield self.obj_to_resource(child)
                 for child in self.object.subfolders.filter(owner=self.user):
                     yield self.obj_to_resource(child)
 
-                # If root folder, also yield __shared__ virtual folder if user has memberships
+                # If root folder, yield virtual folders
                 if not self.db_path:
                     has_shares = SharedFolderMembership.objects.filter(user=self.user).exists()
                     if has_shares:
                         yield MyDavResource('__shared__', self.user)
+                    has_contacts = ContactFolder.objects.filter(owner=self.user).exists()
+                    if has_contacts:
+                        yield MyDavResource('__contacts__', self.user)
 
     def delete(self):
         self.object.delete()
@@ -426,8 +500,9 @@ class MyDavResource(MetaEtagMixIn, BaseDavResource):
             logger.error(f"Cannot create collection {self.displayname}, parent not found")
             raise FileNotFoundError("Parent directory does not exist.")
 
+        folder_owner = None if (self.is_shared or self.is_contact) else self.user
         Folder.objects.create(
             parent=parent_folder,
             name=self.displayname,
-            owner=self.user
+            owner=folder_owner
         )

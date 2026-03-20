@@ -51,7 +51,7 @@ function updateFolderView(data) {
     // Shared folders section
     const sharedSection = document.getElementById('shared-section');
     if (data.shared_folders && data.shared_folders.length > 0) {
-        let html = '<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Shared folders</h3>';
+        let html = '<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Shared</h3>';
         html += '<div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden mb-6">';
         data.shared_folders.forEach(sf => {
             html += '<div onclick="navigateToFolder(' + sf.id + ')" class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 text-sm text-gray-800">' +
@@ -63,6 +63,23 @@ function updateFolderView(data) {
         sharedSection.innerHTML = html;
     } else {
         sharedSection.innerHTML = '';
+    }
+
+    // Contact folders section
+    const contactsSection = document.getElementById('contacts-section');
+    if (data.contact_folders && data.contact_folders.length > 0) {
+        let html = '<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Shared with contact</h3>';
+        html += '<div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden mb-6">';
+        data.contact_folders.forEach(cf => {
+            html += '<div onclick="navigateToFolder(' + cf.id + ')" class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 text-sm text-gray-800">' +
+                '<svg class="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
+                cf.name +
+                '<svg class="w-4 h-4 text-gray-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></div>';
+        });
+        html += '</div>';
+        contactsSection.innerHTML = html;
+    } else {
+        contactsSection.innerHTML = '';
     }
 }
 

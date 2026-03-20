@@ -1037,12 +1037,19 @@ class MoveItemView(LoginRequiredMixin, View):
         ).select_related('shared_folder__root_folder')
         shared_folders = [{'id': m.shared_folder.root_folder.id, 'name': m.shared_folder.name} for m in memberships]
 
+        # Contact folders
+        contact_folders_qs = ContactFolder.objects.filter(
+            owner=request.user
+        ).select_related('contact', 'folder')
+        contact_folders = [{'id': cf.folder.id, 'name': cf.contact.fn or cf.contact.uid} for cf in contact_folders_qs]
+
         context = {
             'item': item,
             'item_type': item_type,
             'current_folder': root_folder,
             'subfolders': root_folder.subfolders.filter(owner=request.user).order_by('name'),
             'shared_folders': shared_folders,
+            'contact_folders': contact_folders,
             'breadcrumbs': breadcrumbs,
             'current_path': '',
         }
@@ -1150,6 +1157,9 @@ class FolderSelectorView(LoginRequiredMixin, View):
         """Convert a folder's full_path to a browse URL path."""
         if folder.full_path.startswith('/__shared__/'):
             return folder.full_path.lstrip('/').rstrip('/')
+        if folder.full_path.startswith('/__contacts__/'):
+            parts = folder.full_path.strip('/').split('/')
+            return '__contacts__/' + '/'.join(parts[2:])
         if folder.full_path == f"/{request.user.username}/":
             return ''
         return folder.full_path.replace(f"/{request.user.username}/", "", 1).rstrip('/')
@@ -1178,7 +1188,8 @@ class FolderSelectorView(LoginRequiredMixin, View):
             current = current.parent
 
         # Get subfolders
-        if is_shared:
+        is_contact = folder.full_path.startswith('/__contacts__/')
+        if is_shared or is_contact:
             children = folder.subfolders.all().order_by('name')
         else:
             children = folder.subfolders.filter(owner=request.user).order_by('name')
@@ -1215,6 +1226,17 @@ class FolderSelectorView(LoginRequiredMixin, View):
                     'path': self._folder_path(request, sf.root_folder),
                 })
             response['shared_folders'] = shared
+
+            contact_folders_qs = ContactFolder.objects.filter(
+                owner=request.user
+            ).select_related('contact', 'folder')
+            contacts = []
+            for cf in contact_folders_qs:
+                contacts.append({
+                    'id': cf.folder.id,
+                    'name': cf.contact.fn or cf.contact.uid,
+                })
+            response['contact_folders'] = contacts
 
         return JsonResponse(response)
 
