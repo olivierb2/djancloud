@@ -46,7 +46,7 @@ class Folder(FileSystemItem):
             # Root folder
             if self.name is None and self.parent is None:
                 # Shared folder root: full_path already set externally
-                if self.full_path and self.full_path.startswith('/__shared__/'):
+                if self.full_path and (self.full_path.startswith('/__shared__/') or self.full_path.startswith('/__contacts__/')):
                     pass
                 elif self.owner:
                     self.full_path = f"/{self.owner.username}/"
@@ -370,6 +370,30 @@ class Contact(models.Model):
 
     def __str__(self):
         return f"{self.addressbook.owner.username}/{self.addressbook.name}/{self.fn or self.uid}"
+
+
+class ContactFolder(models.Model):
+    contact = models.OneToOneField(
+        Contact, on_delete=models.CASCADE, related_name='contact_folder')
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='contact_folders')
+    folder = models.OneToOneField(
+        Folder, on_delete=models.CASCADE, related_name='contact_folder_ref')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('owner', 'contact')]
+
+    def __str__(self):
+        return f"{self.owner.username} -> {self.contact.fn or self.contact.uid}"
+
+    def save(self, *args, **kwargs):
+        if not self.folder_id:
+            root = Folder(owner=None, name=None, parent=None)
+            root.full_path = f"/__contacts__/{self.owner.username}/{self.contact.id}/"
+            root.save()
+            self.folder = root
+        super().save(*args, **kwargs)
 
 
 # Email Models

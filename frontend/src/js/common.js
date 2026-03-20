@@ -69,6 +69,13 @@ export function renderTree(node, container, currentPath, depth, iconType, option
         ipath.setAttribute('stroke-linecap', 'round'); ipath.setAttribute('stroke-linejoin', 'round'); ipath.setAttribute('stroke-width', '2');
         ipath.setAttribute('d', 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z');
         icon.appendChild(ipath);
+    } else if (iconType === 'contact') {
+        icon.setAttribute('class', 'w-4 h-4 text-teal-500 flex-shrink-0');
+        icon.setAttribute('fill', 'none'); icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('viewBox', '0 0 24 24');
+        const ipath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        ipath.setAttribute('stroke-linecap', 'round'); ipath.setAttribute('stroke-linejoin', 'round'); ipath.setAttribute('stroke-width', '2');
+        ipath.setAttribute('d', 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z');
+        icon.appendChild(ipath);
     } else {
         icon.setAttribute('class', 'w-4 h-4 text-yellow-400 flex-shrink-0');
         icon.setAttribute('fill', 'currentColor'); icon.setAttribute('viewBox', '0 0 24 24');
@@ -124,6 +131,25 @@ export function buildSidebarSections(treeEl, data, currentPath, options) {
         }
         treeEl.appendChild(headingRow);
         if (data.shared) data.shared.forEach(s => renderTree(s, treeEl, currentPath, 0, 'shared', options));
+    }
+
+    // Contacts section
+    if (data.contacts && data.contacts.length > 0 || options.onAddContact) {
+        const contactHeadingRow = document.createElement('div');
+        contactHeadingRow.className = 'mt-4 mb-2 px-2 flex items-center justify-between';
+        const contactHeading = document.createElement('h2');
+        contactHeading.className = 'text-xs font-semibold uppercase tracking-wider text-gray-400';
+        contactHeading.textContent = 'Shared with contact';
+        contactHeadingRow.appendChild(contactHeading);
+        if (options.onAddContact) {
+            const addBtn = document.createElement('button');
+            addBtn.className = 'w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-brand-600 hover:bg-gray-100';
+            addBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>';
+            addBtn.addEventListener('click', options.onAddContact);
+            contactHeadingRow.appendChild(addBtn);
+        }
+        treeEl.appendChild(contactHeadingRow);
+        if (data.contacts) data.contacts.forEach(c => renderTree(c, treeEl, currentPath, 0, 'contact', options));
     }
 
     if (data.is_admin && !options.hideConfig) {

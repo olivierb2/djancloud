@@ -11,7 +11,10 @@ from django.core.files.base import ContentFile
 import os
 import json
 
-from .models import User, Folder, File, SharedFolder, SharedFolderMembership, AppToken, LoginToken
+from .models import (
+    User, Folder, File, SharedFolder, SharedFolderMembership, AppToken, LoginToken,
+    Contact, ContactFolder, AddressBook, AddressBookShare,
+)
 from .serializers import UserSerializer, UserCreateSerializer, FolderSerializer, FileSerializer
 
 
@@ -555,9 +558,21 @@ class FolderTreeView(APIView):
             tree['url_path'] = f"__shared__/{sf.name}"
             shared_trees.append(tree)
 
+        contact_folders = ContactFolder.objects.filter(
+            owner=user
+        ).select_related('contact', 'folder')
+        contact_trees = []
+        for cf in contact_folders:
+            tree = build_tree(cf.folder, is_shared=True)
+            tree['name'] = cf.contact.fn or cf.contact.uid
+            tree['contact_id'] = cf.contact.id
+            tree['url_path'] = f"__contacts__/{cf.contact.id}"
+            contact_trees.append(tree)
+
         return Response({
             'tree': personal_tree,
             'shared': shared_trees,
+            'contacts': contact_trees,
             'is_admin': user.role == 'admin',
         })
 

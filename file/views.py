@@ -16,7 +16,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from .models import (
     User, AppToken, LoginToken, Folder, File, SharedFolder, SharedFolderMembership,
     Calendar, CalendarShare, Event,
-    AddressBook, AddressBookShare, Contact,
+    AddressBook, AddressBookShare, Contact, ContactFolder,
     Mailbox, Email, EmailAttachment, EmailSignature,
 )
 from django.views import View
@@ -572,13 +572,31 @@ class FileBrowseView(LoginRequiredMixin, View):
     template_name = 'file/browse.html'
 
     def _resolve_folder(self, request, path):
-        """Resolve path to (folder, is_shared, can_write, is_shared_root).
+        """Resolve path to (folder, is_shared, can_write, is_shared_root, is_contacts_root, contact_folder).
         Returns the folder object and context flags."""
         stripped = path.strip('/')
 
+        # Contacts listing
+        if stripped == '__contacts__':
+            return None, False, False, False, True, None
+
+        # Inside a contact folder
+        if stripped.startswith('__contacts__/'):
+            parts = stripped.split('/')
+            contact_id = parts[1]
+            cf = get_object_or_404(
+                ContactFolder, contact_id=contact_id, owner=request.user)
+
+            if len(parts) == 2:
+                return cf.folder, False, True, False, False, cf
+            sub_path = '/'.join(parts[2:])
+            full_path = f"/__contacts__/{request.user.username}/{contact_id}/{sub_path}/"
+            folder = get_object_or_404(Folder, full_path=full_path)
+            return folder, False, True, False, False, cf
+
         # Shared folders listing
         if stripped == '__shared__':
-            return None, True, False, True
+            return None, True, False, True, False, None
 
         # Inside a shared folder
         if stripped.startswith('__shared__/'):
@@ -590,11 +608,11 @@ class FileBrowseView(LoginRequiredMixin, View):
             can_write = membership.permission in ('write', 'admin')
 
             if len(parts) == 2:
-                return sf.root_folder, True, can_write, False
+                return sf.root_folder, True, can_write, False, False, None
             sub_path = '/'.join(parts[2:])
             full_path = f"/__shared__/{share_name}/{sub_path}/"
             folder = get_object_or_404(Folder, full_path=full_path)
-            return folder, True, can_write, False
+            return folder, True, can_write, False, False, None
 
         # Personal folder
         normalized_path = '/' + stripped
@@ -604,18 +622,47 @@ class FileBrowseView(LoginRequiredMixin, View):
         else:
             user_path = f"/{request.user.username}{normalized_path}/"
             folder = get_object_or_404(Folder, owner=request.user, full_path=user_path)
-        return folder, False, True, False
+        return folder, False, True, False, False, None
 
     def _folder_url_path(self, request, subfolder):
         """Convert a folder's full_path to a browse URL path."""
         if subfolder.full_path.startswith('/__shared__/'):
             return subfolder.full_path.lstrip('/').rstrip('/')
+        if subfolder.full_path.startswith('/__contacts__/'):
+            # /__contacts__/username/contact_id/sub/ -> __contacts__/contact_id/sub
+            parts = subfolder.full_path.strip('/').split('/')
+            # parts: ['__contacts__', username, contact_id, ...]
+            return '__contacts__/' + '/'.join(parts[2:])
         if subfolder.full_path == f"/{request.user.username}/":
             return ''
         return subfolder.full_path.replace(f"/{request.user.username}/", "", 1).rstrip('/')
 
     def get(self, request, path=''):
-        folder, is_shared, can_write, is_shared_root = self._resolve_folder(request, path)
+        folder, is_shared, can_write, is_shared_root, is_contacts_root, contact_folder = self._resolve_folder(request, path)
+
+        # Special case: listing all contact folders
+        if is_contacts_root:
+            contact_folders = ContactFolder.objects.filter(
+                owner=request.user
+            ).select_related('contact', 'folder')
+            contacts_list = []
+            for cf in contact_folders:
+                cf.contact.url_path = f"__contacts__/{cf.contact.id}"
+                contacts_list.append(cf.contact)
+
+            context = {
+                'current_folder': None,
+                'current_path': '__contacts__',
+                'is_contacts_root': True,
+                'contacts_list': contacts_list,
+                'subfolders': [],
+                'files': [],
+                'parent_path': '',
+                'breadcrumb_parts': [{'name': 'Contacts', 'path': '__contacts__'}],
+                'is_shared': False,
+                'can_write': False,
+            }
+            return render(request, self.template_name, context)
 
         # Special case: listing all shared folders
         if is_shared_root:
@@ -643,7 +690,8 @@ class FileBrowseView(LoginRequiredMixin, View):
             }
             return render(request, self.template_name, context)
 
-        if is_shared:
+        is_contact = contact_folder is not None
+        if is_shared or is_contact:
             subfolders = folder.subfolders.all().order_by('name')
             files = folder.files.all().order_by('file')
         else:
@@ -692,9 +740,9 @@ class FileBrowseView(LoginRequiredMixin, View):
         return render(request, self.template_name, context)
 
     def post(self, request, path=''):
-        folder, is_shared, can_write, is_shared_root = self._resolve_folder(request, path)
+        folder, is_shared, can_write, is_shared_root, is_contacts_root, contact_folder = self._resolve_folder(request, path)
 
-        if is_shared_root or not can_write:
+        if is_shared_root or is_contacts_root or not can_write:
             messages.error(request, 'You do not have write access here.')
             return redirect(request.path)
 
@@ -1267,13 +1315,16 @@ class FolderTreeView(LoginRequiredMixin, View):
             owner=request.user, parent__isnull=True, name__isnull=True
         ).first()
 
-        def build_tree(folder, is_shared=False):
-            if is_shared:
+        def build_tree(folder, is_shared=False, contact_id=None):
+            if is_shared or contact_id:
                 children = folder.subfolders.all().order_by('name')
             else:
                 children = folder.subfolders.filter(owner=request.user).order_by('name')
             if folder.full_path.startswith('/__shared__/'):
                 url_path = folder.full_path.lstrip('/').rstrip('/')
+            elif folder.full_path.startswith('/__contacts__/'):
+                parts = folder.full_path.strip('/').split('/')
+                url_path = '__contacts__/' + '/'.join(parts[2:])
             elif folder.full_path == f"/{request.user.username}/":
                 url_path = ''
             else:
@@ -1282,7 +1333,7 @@ class FolderTreeView(LoginRequiredMixin, View):
                 'id': folder.id,
                 'name': folder.name or 'Home',
                 'url_path': url_path,
-                'children': [build_tree(c, is_shared=is_shared) for c in children],
+                'children': [build_tree(c, is_shared=is_shared, contact_id=contact_id) for c in children],
             }
 
         personal_tree = build_tree(root) if root else None
@@ -1301,8 +1352,25 @@ class FolderTreeView(LoginRequiredMixin, View):
             tree['url_path'] = f"__shared__/{sf.name}"
             shared_trees.append(tree)
 
+        # Contact folders
+        contact_folders = ContactFolder.objects.filter(
+            owner=request.user
+        ).select_related('contact', 'folder')
+        contact_trees = []
+        for cf in contact_folders:
+            tree = build_tree(cf.folder, contact_id=cf.contact.id)
+            tree['name'] = cf.contact.fn or cf.contact.uid
+            tree['contact_id'] = cf.contact.id
+            tree['url_path'] = f"__contacts__/{cf.contact.id}"
+            contact_trees.append(tree)
+
         is_admin = request.user.role == 'admin'
-        return JsonResponse({'tree': personal_tree, 'shared': shared_trees, 'is_admin': is_admin})
+        return JsonResponse({
+            'tree': personal_tree,
+            'shared': shared_trees,
+            'contacts': contact_trees,
+            'is_admin': is_admin,
+        })
 
 
 class SharedFolderCreateView(LoginRequiredMixin, View):
@@ -1381,6 +1449,37 @@ class SharedFolderMemberDeleteView(LoginRequiredMixin, View):
         if not deleted:
             return JsonResponse({'error': 'Membership not found'}, status=404)
         return JsonResponse({'ok': True})
+
+
+class ContactFolderCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        contact_id = data.get('contact_id')
+        if not contact_id:
+            return JsonResponse({'error': 'contact_id required'}, status=400)
+
+        own_books = AddressBook.objects.filter(owner=request.user).values_list('id', flat=True)
+        shared_books = AddressBookShare.objects.filter(user=request.user).values_list('addressbook_id', flat=True)
+        all_books = list(own_books) + list(shared_books)
+
+        contact = get_object_or_404(Contact, id=contact_id, addressbook_id__in=all_books)
+
+        cf, created = ContactFolder.objects.get_or_create(
+            owner=request.user,
+            contact=contact,
+        )
+
+        return JsonResponse({
+            'id': cf.id,
+            'contact_id': contact.id,
+            'contact_name': contact.fn or contact.uid,
+            'url_path': f"__contacts__/{contact.id}",
+            'created': created,
+        }, status=201 if created else 200)
 
 
 class UserListView(LoginRequiredMixin, View):
@@ -2697,9 +2796,8 @@ class ContactSearchView(LoginRequiredMixin, View):
 
         results = []
         for c in contacts:
-            if c.email:
-                label = f'{c.fn} <{c.email}>' if c.fn else c.email
-                results.append({'label': label, 'email': c.email, 'name': c.fn or ''})
+            label = f'{c.fn} <{c.email}>' if c.fn and c.email else (c.fn or c.email or c.uid)
+            results.append({'id': c.id, 'label': label, 'email': c.email or '', 'name': c.fn or ''})
         return JsonResponse(results, safe=False)
 
 

@@ -240,6 +240,68 @@ if (window.location.hash) {
     }
 }
 
+// Contact search modal
+let contactSearchTimeout = null;
+function openContactSearchModal() {
+    openModal('contact-search-modal');
+    const input = document.getElementById('contact-search-input');
+    const results = document.getElementById('contact-search-results');
+    input.value = '';
+    results.innerHTML = '';
+    input.focus();
+}
+
+document.getElementById('contact-search-input')?.addEventListener('input', (e) => {
+    const q = e.target.value.trim();
+    const results = document.getElementById('contact-search-results');
+    clearTimeout(contactSearchTimeout);
+    if (q.length < 1) { results.innerHTML = ''; return; }
+    contactSearchTimeout = setTimeout(() => {
+        fetch(`/api/contacts/search/?q=${encodeURIComponent(q)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.length === 0) {
+                    results.innerHTML = '<div class="px-4 py-3 text-sm text-gray-400 text-center">No contacts found</div>';
+                } else {
+                    results.innerHTML = data.map(c => `
+                        <button type="button" data-contact-id="${c.id}"
+                                class="contact-result flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                            <svg class="w-5 h-5 text-teal-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-gray-900 truncate">${c.name || c.email}</div>
+                                ${c.email ? `<div class="text-xs text-gray-500 truncate">${c.email}</div>` : ''}
+                            </div>
+                        </button>
+                    `).join('');
+                    results.querySelectorAll('.contact-result').forEach(btn => {
+                        btn.addEventListener('click', () => selectContact(btn));
+                    });
+                }
+            });
+    }, 300);
+});
+
+function selectContact(btn) {
+    const contactId = btn.dataset.contactId;
+    fetch('/api/contact-folders/create/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ contact_id: parseInt(contactId) }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                closeModal('contact-search-modal');
+                window.location.href = '/browse/' + data.url_path;
+            }
+        })
+        .catch(err => console.error('Error creating contact folder:', err));
+}
+
 // Sidebar folder tree
 fetch('/api/tree/').then(r => r.json()).then(data => {
     const treeEl = document.getElementById('folder-tree');
@@ -249,6 +311,7 @@ fetch('/api/tree/').then(r => r.json()).then(data => {
     buildSidebarSections(treeEl, data, currentPath, {
         onShareClick: openMembersModal,
         onAddShared: () => openModal('shared-folder-modal'),
+        onAddContact: () => openContactSearchModal(),
         hideConfig: true,
     });
 });

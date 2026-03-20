@@ -138,7 +138,35 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                        {% if is_shared_root %}
+                        {% if is_contacts_root %}
+                        {% for contact in contacts_list %}
+                        <tr class="group hover:bg-gray-50/50 transition-colors">
+                            <td class="px-4 py-2.5">
+                                <a href="{% url 'browse_files' path=contact.url_path %}"
+                                   class="inline-flex items-center gap-2 font-medium text-gray-900 hover:text-brand-600">
+                                    <svg class="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                    </svg>
+                                    {{ contact.fn|default:contact.uid }}
+                                </a>
+                            </td>
+                            <td class="px-4 py-2.5 text-sm text-gray-500 hidden sm:table-cell">{{ contact.email|default:"—" }}</td>
+                            <td class="px-4 py-2.5 text-sm text-gray-500 hidden md:table-cell">{{ contact.org|default:"—" }}</td>
+                            <td class="px-4 py-2.5 text-sm text-gray-400 text-right hidden sm:table-cell">{{ contact.tel|default:"—" }}</td>
+                            <td class="px-4 py-2.5 text-right"></td>
+                        </tr>
+                        {% endfor %}
+                        {% if not contacts_list %}
+                        <tr>
+                            <td colspan="5" class="px-4 py-12 text-center text-sm text-gray-400">
+                                <svg class="mx-auto mb-2 w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                                No contact folders yet
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% elif is_shared_root %}
                         {% for sf in shared_folders %}
                         <tr class="group hover:bg-gray-50/50 transition-colors">
                             <td class="px-4 py-2.5">
@@ -370,6 +398,25 @@
         <div class="flex justify-end mt-4">
             <button type="button" onclick="closeModal('members-modal')"
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Contact Search modal -->
+<div id="contact-search-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Add a contact</h3>
+        <div class="relative mb-4">
+            <input type="text" id="contact-search-input" placeholder="Search by name or email..."
+                   class="block w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <svg class="w-4 h-4 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+        </div>
+        <div id="contact-search-results" class="max-h-64 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200"></div>
+        <div class="flex justify-end mt-4">
+            <button type="button" onclick="closeModal('contact-search-modal')"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
         </div>
     </div>
 </div>
