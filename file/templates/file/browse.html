@@ -42,10 +42,7 @@
         <!-- Sidebar -->
         <aside id="sidebar" class="hidden lg:flex w-60 flex-col border-r border-gray-200 bg-white overflow-y-auto">
             <div class="px-3 py-4">
-                <h2 class="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-gray-400">My files</h2>
-                <div id="folder-tree" class="text-sm">
-                    <div class="flex items-center gap-1 px-2 py-1.5 rounded-md text-gray-400 text-xs">Loading...</div>
-                </div>
+                <div id="folder-tree" class="text-sm"></div>
             </div>
         </aside>
 
@@ -402,24 +399,8 @@
     </div>
 </div>
 
-<!-- Contact Search modal -->
-<div id="contact-search-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
-    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Add a contact</h3>
-        <div class="relative mb-4">
-            <input type="text" id="contact-search-input" placeholder="Search by name or email..."
-                   class="block w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-            <svg class="w-4 h-4 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-            </svg>
-        </div>
-        <div id="contact-search-results" class="max-h-64 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200"></div>
-        <div class="flex justify-end mt-4">
-            <button type="button" onclick="closeModal('contact-search-modal')"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-        </div>
-    </div>
-</div>
+<!-- Vue mount point for contact search modal -->
+<div id="contact-search-app"></div>
 
 {% endblock %}
 
@@ -427,7 +408,8 @@
 <script type="application/json" id="page-data">
 {
     "currentPath": "{{ current_path|escapejs }}",
-    "canWrite": {% if can_write %}true{% else %}false{% endif %}
+    "canWrite": {% if can_write %}true{% else %}false{% endif %},
+    "isAdmin": {% if request.user.role == 'admin' %}true{% else %}false{% endif %}
 }
 </script>
 {% render_bundle 'browse' 'js' %}

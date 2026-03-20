@@ -1,4 +1,7 @@
-import { openModal, closeModal, getCsrfToken, renderTree, buildSidebarSections } from './common.js';
+import { createApp } from 'vue';
+import { openModal, closeModal, getCsrfToken } from './common.js';
+import BrowseSidebar from '../components/BrowseSidebar.vue';
+import ContactSearchModal from '../components/ContactSearchModal.vue';
 
 // Read Django context
 const pageData = JSON.parse(document.getElementById('page-data').textContent);
@@ -165,14 +168,11 @@ let searchTimeout = null;
 
 searchInput.addEventListener('input', (e) => {
     const query = e.target.value.trim();
-
     clearTimeout(searchTimeout);
-
     if (query.length < 2) {
         searchResults.classList.add('hidden');
         return;
     }
-
     searchTimeout = setTimeout(() => {
         fetch(`/api/search/?q=${encodeURIComponent(query)}`)
             .then(r => r.json())
@@ -188,7 +188,6 @@ searchInput.addEventListener('input', (e) => {
                                 : item.name.toLowerCase().endsWith('.md')
                                     ? '<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>'
                                     : '<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
-
                         return `
                             <a href="${item.url}" class="flex items-start gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                 ${icon}
@@ -206,14 +205,12 @@ searchInput.addEventListener('input', (e) => {
     }, 300);
 });
 
-// Close search results when clicking outside
 document.addEventListener('click', (e) => {
     if (!searchInput.parentElement.contains(e.target)) {
         searchResults.classList.add('hidden');
     }
 });
 
-// Close search results on Escape
 searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         searchResults.classList.add('hidden');
@@ -223,95 +220,37 @@ searchInput.addEventListener('keydown', (e) => {
 
 // Highlight and scroll to file if hash is present
 if (window.location.hash) {
-    const fileId = window.location.hash.substring(1); // Remove the #
+    const fileId = window.location.hash.substring(1);
     const fileRow = document.getElementById(fileId);
     if (fileRow) {
-        // Add highlight animation
-        fileRow.style.backgroundColor = '#fef3c7'; // yellow-100
+        fileRow.style.backgroundColor = '#fef3c7';
         setTimeout(() => {
             fileRow.style.transition = 'background-color 1s ease';
             fileRow.style.backgroundColor = '';
         }, 100);
-
-        // Scroll to element
         setTimeout(() => {
             fileRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
     }
 }
 
-// Contact search modal
-let contactSearchTimeout = null;
-function openContactSearchModal() {
-    openModal('contact-search-modal');
-    const input = document.getElementById('contact-search-input');
-    const results = document.getElementById('contact-search-results');
-    input.value = '';
-    results.innerHTML = '';
-    input.focus();
+// Mount Vue contact search modal
+let contactModalInstance = null;
+const contactModalEl = document.getElementById('contact-search-app');
+if (contactModalEl) {
+    const contactApp = createApp(ContactSearchModal);
+    contactModalInstance = contactApp.mount(contactModalEl);
 }
 
-document.getElementById('contact-search-input')?.addEventListener('input', (e) => {
-    const q = e.target.value.trim();
-    const results = document.getElementById('contact-search-results');
-    clearTimeout(contactSearchTimeout);
-    if (q.length < 1) { results.innerHTML = ''; return; }
-    contactSearchTimeout = setTimeout(() => {
-        fetch(`/api/contacts/search/?q=${encodeURIComponent(q)}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.length === 0) {
-                    results.innerHTML = '<div class="px-4 py-3 text-sm text-gray-400 text-center">No contacts found</div>';
-                } else {
-                    results.innerHTML = data.map(c => `
-                        <button type="button" data-contact-id="${c.id}"
-                                class="contact-result flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
-                            <svg class="w-5 h-5 text-teal-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                            </svg>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-900 truncate">${c.name || c.email}</div>
-                                ${c.email ? `<div class="text-xs text-gray-500 truncate">${c.email}</div>` : ''}
-                            </div>
-                        </button>
-                    `).join('');
-                    results.querySelectorAll('.contact-result').forEach(btn => {
-                        btn.addEventListener('click', () => selectContact(btn));
-                    });
-                }
-            });
-    }, 300);
-});
-
-function selectContact(btn) {
-    const contactId = btn.dataset.contactId;
-    fetch('/api/contact-folders/create/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-        body: JSON.stringify({ contact_id: parseInt(contactId) }),
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                alert(data.error);
-            } else {
-                closeModal('contact-search-modal');
-                window.location.href = '/browse/' + data.url_path;
-            }
-        })
-        .catch(err => console.error('Error creating contact folder:', err));
-}
-
-// Sidebar folder tree
-fetch('/api/tree/').then(r => r.json()).then(data => {
-    const treeEl = document.getElementById('folder-tree');
-    treeEl.innerHTML = '';
-    if (data.tree) renderTree(data.tree, treeEl, currentPath, 0, 'folder', { onShareClick: openMembersModal });
-
-    buildSidebarSections(treeEl, data, currentPath, {
-        onShareClick: openMembersModal,
-        onAddShared: () => openModal('shared-folder-modal'),
-        onAddContact: () => openContactSearchModal(),
-        hideConfig: true,
+// Mount Vue sidebar
+const sidebarEl = document.getElementById('folder-tree');
+if (sidebarEl) {
+    const sidebarApp = createApp(BrowseSidebar, {
+        currentPath: currentPath,
+        isAdmin: pageData.isAdmin || false,
+        onOpenSharedModal: () => openModal('shared-folder-modal'),
+        onOpenMembersModal: (sfId, sfName) => openMembersModal(sfId, sfName),
+        onOpenContactModal: () => { if (contactModalInstance) contactModalInstance.open(); },
     });
-});
+    sidebarApp.mount(sidebarEl);
+}
