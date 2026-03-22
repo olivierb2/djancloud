@@ -277,7 +277,26 @@
 <!-- Members modal -->
 <div id="shared-members-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
     <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Members — <span id="sm-members-title"></span></h3>
+        <h3 class="text-lg font-semibold text-gray-900 mb-4"><span id="sm-members-title"></span></h3>
+
+        <!-- Edit shared mailbox -->
+        <form method="post" id="sm-edit-form" class="mb-4 space-y-2 border-b border-gray-100 pb-4">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <input type="text" name="name" id="sm-edit-name" required maxlength="255"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                <input type="email" name="email_alias" id="sm-edit-email" required maxlength="255"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <button type="submit"
+                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Save</button>
+        </form>
+
+        <h4 class="text-sm font-semibold text-gray-700 mb-2">Members</h4>
         <div id="sm-members-list" class="mb-4 max-h-60 overflow-y-auto divide-y divide-gray-100"></div>
         <form method="post" id="sm-add-member-form" class="flex items-center gap-2 border-t border-gray-100 pt-4">
             {% csrf_token %}
@@ -327,6 +346,7 @@ var sharedMembersData = {
     {% for entry in shared_tree %}
     {{ entry.shared_mailbox.id }}: {
         name: "{{ entry.shared_mailbox.name|escapejs }}",
+        emailAlias: "{{ entry.shared_mailbox.email_alias|escapejs }}",
         members: [
             {% for m in entry.shared_mailbox.memberships.all %}
             { userId: {{ m.user.id }}, username: "{{ m.user.username|escapejs }}", permission: "{{ m.permission }}" },
@@ -339,6 +359,9 @@ var sharedMembersData = {
 function openMembersModal(smId, name) {
     var data = sharedMembersData[smId];
     document.getElementById('sm-members-title').textContent = name;
+    document.getElementById('sm-edit-name').value = data ? data.name : name;
+    document.getElementById('sm-edit-email').value = data ? data.emailAlias : '';
+    document.getElementById('sm-edit-form').action = '/mail/shared/' + smId + '/update/';
     var list = document.getElementById('sm-members-list');
     list.innerHTML = '';
     if (data && data.members.length) {

@@ -3128,6 +3128,34 @@ class SharedMailboxCreateView(LoginRequiredMixin, View):
         return redirect(f'/mail/?mailbox=__shared__/{name}/INBOX')
 
 
+class SharedMailboxUpdateView(LoginRequiredMixin, View):
+    def post(self, request, sm_id):
+        from .models import SharedMailbox, SharedMailboxMembership
+        sm = get_object_or_404(SharedMailbox, id=sm_id)
+        if request.user.role != 'admin':
+            membership = SharedMailboxMembership.objects.filter(
+                shared_mailbox=sm, user=request.user, permission='admin').first()
+            if not membership:
+                messages.error(request, 'Admin access required.')
+                return redirect('/mail/')
+        name = request.POST.get('name', '').strip()
+        email_alias = request.POST.get('email_alias', '').strip()
+        if not name or not email_alias:
+            messages.error(request, 'Name and email alias are required.')
+            return redirect('/mail/')
+        if SharedMailbox.objects.filter(name=name).exclude(pk=sm.pk).exists():
+            messages.error(request, f'Name "{name}" is already in use.')
+            return redirect('/mail/')
+        if SharedMailbox.objects.filter(email_alias=email_alias).exclude(pk=sm.pk).exists():
+            messages.error(request, f'Email "{email_alias}" is already in use.')
+            return redirect('/mail/')
+        sm.name = name
+        sm.email_alias = email_alias
+        sm.save(update_fields=['name', 'email_alias'])
+        messages.success(request, f'Shared mailbox updated.')
+        return redirect('/mail/')
+
+
 class SharedMailboxDeleteView(LoginRequiredMixin, View):
     def post(self, request, sm_id):
         from .models import SharedMailbox, SharedMailboxMembership
