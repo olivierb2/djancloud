@@ -482,7 +482,7 @@
   </teleport>
 
   <!-- Contact search modal -->
-  <contact-search-modal ref="contactModal" />
+  <contact-search-modal ref="contactModal" :csrf-token="csrfToken" />
 
   <!-- Move picker modal -->
   <teleport to="body">

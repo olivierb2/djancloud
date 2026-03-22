@@ -50,7 +50,10 @@ import { defineComponent, ref, nextTick } from 'vue';
 
 export default defineComponent({
   name: 'ContactSearchModal',
-  setup() {
+  props: {
+    csrfToken: { type: String, default: '' },
+  },
+  setup(props) {
     const visible = ref(false);
     const query = ref('');
     const results = ref(null);
@@ -82,11 +85,9 @@ export default defineComponent({
     }
 
     function selectContact(contactId) {
-      const csrfEl = document.querySelector('[name=csrfmiddlewaretoken]');
-      const csrfToken = csrfEl ? csrfEl.value : '';
       fetch('/api/contact-folders/create/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': props.csrfToken },
         body: JSON.stringify({ contact_id: contactId }),
       })
         .then(r => r.json())

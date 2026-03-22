@@ -139,7 +139,8 @@
       </svg>
       {{ sending ? 'Sending...' : 'Send' }}
     </button>
-    <a href="/mail/" class="text-sm text-gray-500 hover:text-gray-700">Discard</a>
+    <button v-if="inline" type="button" @click="$emit('discard')" class="text-sm text-gray-500 hover:text-gray-700">Discard</button>
+    <a v-else href="/mail/" class="text-sm text-gray-500 hover:text-gray-700">Discard</a>
   </div>
 
   <!-- File Picker Modal -->
@@ -253,7 +254,10 @@ export default {
     signaturesJson: { type: String, default: '[]' },
     defaultSignatureId: { type: [String, Number], default: '' },
     defaultSignatureHtml: { type: String, default: '' },
+    inline: { type: Boolean, default: false },
   },
+
+  emits: ['discard'],
 
   data() {
     return {

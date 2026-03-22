@@ -198,6 +198,7 @@ export default {
         prefillSubject = subj.startsWith('Fwd:') ? subj : 'Fwd: ' + subj;
       }
 
+      const self = this;
       this.composeApp = createApp(MailCompose, {
         csrfToken: this.csrfToken,
         sendUrl: this.sendUrl,
@@ -207,6 +208,8 @@ export default {
         signaturesJson: this.signaturesJson,
         defaultSignatureId: this.defaultSignatureId ? String(this.defaultSignatureId) : '',
         defaultSignatureHtml: this.defaultSignatureHtml,
+        inline: true,
+        onDiscard() { self.replyMode = null; },
       });
       this.composeApp.mount(el);
 
