@@ -18,8 +18,9 @@
                 </div>
                 {% for ab in addressbooks %}
                 <a href="?addressbook={{ ab.id }}"
-                   class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
-                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                   class="ab-drop-target flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
+                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}"
+                   data-ab-id="{{ ab.id }}">
                     <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
                     </svg>
@@ -40,8 +41,9 @@
                     {% endif %}
                 </div>
                 {% for ab in shareable_addressbooks %}
-                <div class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
-                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                <div class="group ab-drop-target flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
+                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}"
+                     data-ab-id="{{ ab.id }}">
                     <a href="?addressbook={{ ab.id }}" class="flex items-center gap-2 flex-1 min-w-0">
                         <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
@@ -58,8 +60,9 @@
                 {% endfor %}
                 {% for ab in shared_addressbooks %}
                 <a href="?addressbook={{ ab.id }}"
-                   class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
-                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                   class="ab-drop-target flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors
+                          {% if selected_addressbook and selected_addressbook.id == ab.id %}bg-gray-100 text-gray-900 font-medium{% else %}text-gray-600 hover:bg-gray-50{% endif %}"
+                   data-ab-id="{{ ab.id }}">
                     <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
                     </svg>
@@ -195,6 +198,11 @@
                 <div class="flex flex-wrap gap-2">
                     {% for group in contact_groups %}
                     <button type="button" onclick="openGroupMembersModal({{ group.id }}, '{{ group.name|escapejs }}')"
+                            draggable="true"
+                            data-group-id="{{ group.id }}"
+                            data-group-name="{{ group.name|escapejs }}"
+                            ondragstart="onGroupDragStart(event, {{ group.id }}, '{{ group.name|escapejs }}')"
+                            ondragend="onGroupDragEnd(event)"
                             class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:border-brand-300 hover:bg-brand-50 transition-colors cursor-pointer">
                         <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -402,6 +410,107 @@ function openEditContact(contactId, fn, email, tel, org) {
 }
 
 var csrf = '{{ csrf_token }}';
+
+// --- Contact & Group drag & drop ---
+var draggedContactId = null;
+var draggedGroupId = null;
+var dragType = null; // 'contact' or 'group'
+
+function onContactDragStart(e, contactId, name) {
+    draggedContactId = contactId;
+    draggedGroupId = null;
+    dragType = 'contact';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'contact:' + contactId);
+    var row = e.target.closest('tr');
+    if (row) setTimeout(function() { row.style.opacity = '0.4'; }, 0);
+}
+
+function onContactDragEnd(e) {
+    draggedContactId = null;
+    dragType = null;
+    var row = e.target.closest('tr');
+    if (row) row.style.opacity = '';
+    clearDropHighlights();
+}
+
+function onGroupDragStart(e, groupId, name) {
+    draggedGroupId = groupId;
+    draggedContactId = null;
+    dragType = 'group';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'group:' + groupId);
+    e.target.style.opacity = '0.4';
+}
+
+function onGroupDragEnd(e) {
+    draggedGroupId = null;
+    dragType = null;
+    e.target.style.opacity = '';
+    clearDropHighlights();
+}
+
+function clearDropHighlights() {
+    document.querySelectorAll('.ab-drop-target').forEach(function(el) {
+        el.classList.remove('ring-2', 'ring-brand-400', 'bg-brand-50');
+    });
+}
+
+document.querySelectorAll('.ab-drop-target').forEach(function(target) {
+    target.addEventListener('dragover', function(e) {
+        if (!dragType) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        this.classList.add('ring-2', 'ring-brand-400', 'bg-brand-50');
+    });
+    target.addEventListener('dragleave', function() {
+        this.classList.remove('ring-2', 'ring-brand-400', 'bg-brand-50');
+    });
+    target.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('ring-2', 'ring-brand-400', 'bg-brand-50');
+        var abId = parseInt(this.dataset.abId);
+
+        if (dragType === 'contact' && draggedContactId) {
+            var contactId = draggedContactId;
+            draggedContactId = null;
+            dragType = null;
+            fetch('/api/contacts/' + contactId + '/move/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                body: JSON.stringify({ addressbook_id: abId })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) alert(data.error);
+                else {
+                    var row = document.querySelector('tr[data-contact-id="' + contactId + '"]');
+                    if (row) row.remove();
+                }
+            })
+            .catch(function() { alert('Move failed'); });
+
+        } else if (dragType === 'group' && draggedGroupId) {
+            var groupId = draggedGroupId;
+            draggedGroupId = null;
+            dragType = null;
+            fetch('/api/contact-groups/' + groupId + '/move/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                body: JSON.stringify({ addressbook_id: abId })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) alert(data.error);
+                else {
+                    var badge = document.querySelector('[data-group-id="' + groupId + '"]');
+                    if (badge) badge.remove();
+                }
+            })
+            .catch(function() { alert('Move failed'); });
+        }
+    });
+});
 var currentGroupId = null;
 
 function openGroupMembersModal(groupId, name) {
@@ -497,10 +606,11 @@ function createGroup(e) {
     {% endif %}
     {% endfor %}
 
+    var addressbookId = {% if selected_addressbook %}{{ selected_addressbook.id }}{% else %}null{% endif %};
     fetch('/api/contact-groups/create/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify({ name: name, contact_ids: contactIds })
+        body: JSON.stringify({ name: name, contact_ids: contactIds, addressbook_id: addressbookId })
     })
     .then(r => r.json())
     .then(data => {

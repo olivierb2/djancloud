@@ -1,4 +1,9 @@
-<tr class="group hover:bg-gray-50/50 transition-colors">
+<tr class="group hover:bg-gray-50/50 transition-colors contact-draggable"
+    draggable="true"
+    data-contact-id="{{ contact.id }}"
+    data-contact-name="{{ contact.fn|default:contact.uid|escapejs }}"
+    ondragstart="onContactDragStart(event, {{ contact.id }}, '{{ contact.fn|default:contact.uid|escapejs }}')"
+    ondragend="onContactDragEnd(event)">
     <td class="px-4 py-1.5">
         <div class="flex items-center gap-2">
             <div class="w-7 h-7 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-xs font-medium">

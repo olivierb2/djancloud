@@ -1599,10 +1599,16 @@ class ContactGroupCreateView(LoginRequiredMixin, View):
         if not name:
             return JsonResponse({'error': 'Group name is required'}, status=400)
 
+        addressbook_id = data.get('addressbook_id')
+        addressbook = None
+        if addressbook_id:
+            addressbook = get_object_or_404(AddressBook, id=addressbook_id)
+
         contact_ids = data.get('contact_ids', [])
 
         group, created = ContactGroup.objects.get_or_create(
-            owner=request.user, name=name)
+            owner=request.user, name=name,
+            defaults={'addressbook': addressbook})
 
         if contact_ids:
             own_books = AddressBook.objects.filter(owner=request.user).values_list('id', flat=True)
@@ -1648,6 +1654,29 @@ class ContactGroupRemoveMemberView(LoginRequiredMixin, View):
     def post(self, request, group_id, contact_id):
         group = get_object_or_404(ContactGroup, id=group_id, owner=request.user)
         group.contacts.remove(contact_id)
+        return JsonResponse({'ok': True})
+
+
+class ContactGroupMoveView(LoginRequiredMixin, View):
+    def post(self, request, group_id):
+        group = get_object_or_404(ContactGroup, id=group_id, owner=request.user)
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        dest_ab_id = data.get('addressbook_id')
+        if not dest_ab_id:
+            return JsonResponse({'error': 'addressbook_id required'}, status=400)
+        dest_ab = get_object_or_404(AddressBook, id=dest_ab_id)
+        # Check write access
+        if dest_ab.owner_id != request.user.id:
+            share = AddressBookShare.objects.filter(
+                addressbook=dest_ab, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'No write access'}, status=403)
+        group.addressbook = dest_ab
+        group.save(update_fields=['addressbook'])
         return JsonResponse({'ok': True})
 
 
@@ -2208,8 +2237,12 @@ class ContactsWebView(LoginRequiredMixin, View):
             else:
                 ungrouped.append(c)
 
-        # User's contact groups
-        contact_groups = ContactGroup.objects.filter(owner=request.user)
+        # Contact groups for selected address book
+        if selected_addressbook:
+            contact_groups = ContactGroup.objects.filter(
+                owner=request.user, addressbook=selected_addressbook)
+        else:
+            contact_groups = ContactGroup.objects.none()
 
         return render(request, 'file/contacts.html', {
             'addressbooks': own_addressbooks,
@@ -2370,6 +2403,46 @@ class ContactDeleteView(LoginRequiredMixin, View):
         contact.delete()
         messages.success(request, 'Contact deleted.')
         return redirect(f'/contacts/?addressbook={ab.id}')
+
+
+class ContactMoveView(LoginRequiredMixin, View):
+    """Move a contact to a different address book."""
+    def post(self, request, contact_id):
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        dest_ab_id = data.get('addressbook_id')
+        if not dest_ab_id:
+            return JsonResponse({'error': 'addressbook_id required'}, status=400)
+
+        contact = get_object_or_404(Contact, id=contact_id)
+        src_ab = contact.addressbook
+
+        # Check write access on source
+        if src_ab.owner_id != request.user.id:
+            share = AddressBookShare.objects.filter(
+                addressbook=src_ab, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'No write access to source'}, status=403)
+
+        # Check write access on destination
+        dest_ab = get_object_or_404(AddressBook, id=dest_ab_id)
+        if dest_ab.owner_id != request.user.id:
+            share = AddressBookShare.objects.filter(
+                addressbook=dest_ab, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'No write access to destination'}, status=403)
+
+        if contact.addressbook_id == dest_ab.id:
+            return JsonResponse({'error': 'Contact is already in this address book'}, status=400)
+
+        contact.addressbook = dest_ab
+        contact.save()
+        return JsonResponse({'ok': True})
 
 
 class ContactUpdateView(LoginRequiredMixin, View):
