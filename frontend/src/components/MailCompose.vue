@@ -52,15 +52,6 @@
            class="flex-1 border-0 p-0 text-sm outline-none focus:ring-0">
   </div>
 
-  <!-- Signature selector -->
-  <div v-if="signatures.length" class="border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-    <label class="text-sm font-medium text-gray-500 flex-shrink-0">Signature</label>
-    <select v-model="selectedSignatureId" @change="loadSignature" class="rounded-lg border border-gray-300 px-2 py-1 text-sm">
-      <option value="">None</option>
-      <option v-for="sig in signatures" :key="sig.id" :value="sig.id">{{ sig.name }}</option>
-    </select>
-  </div>
-
   <!-- Toolbar -->
   <div class="border-b border-gray-100 px-4 py-1.5 flex items-center gap-1 flex-wrap">
     <button v-for="btn in toolbarButtons" :key="btn.cmd" type="button" @click="execCmd(btn.cmd)"
@@ -90,7 +81,14 @@
        @input="onEditorInput">
   </div>
 
-  <!-- Signature preview -->
+  <!-- Signature selector + preview -->
+  <div v-if="signatures.length" class="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
+    <label class="text-sm font-medium text-gray-500 flex-shrink-0">Signature</label>
+    <select v-model="selectedSignatureId" @change="loadSignature" class="rounded-lg border border-gray-300 px-2 py-1 text-sm">
+      <option value="">None</option>
+      <option v-for="sig in signatures" :key="sig.id" :value="sig.id">{{ sig.name }}</option>
+    </select>
+  </div>
   <div v-if="signatureHtml" class="px-4 pb-2">
     <div class="border-t border-gray-100 pt-2 text-sm text-gray-500" v-html="signatureHtml"></div>
   </div>
