@@ -21,8 +21,12 @@ class DjancloudSMTPHandler:
             bare = bare.split('<')[1].split('>')[0]
         bare = bare.lower().strip()
 
-        # Check domain against allowed domains
-        allowed_domains = [d.domain async for d in AllowedDomain.objects.all()]
+        # Check domain against allowed domains (cached)
+        from django.core.cache import cache
+        allowed_domains = cache.get('smtp_allowed_domains')
+        if allowed_domains is None:
+            allowed_domains = [d.domain async for d in AllowedDomain.objects.all()]
+            cache.set('smtp_allowed_domains', allowed_domains, 300)
         domain = bare.split('@')[-1] if '@' in bare else ''
         logger.info("handle_RCPT: address=%s, domain=%s, allowed_domains=%s", address, domain, allowed_domains)
         if not allowed_domains or domain not in allowed_domains:
@@ -35,8 +39,12 @@ class DjancloudSMTPHandler:
     async def handle_DATA(self, server, session, envelope):
         from file.models import User, Mailbox, Email, EmailAttachment, AllowedDomain
 
-        # Double-check allowed domains (in case handle_RCPT was bypassed)
-        allowed_domains = [d.domain async for d in AllowedDomain.objects.all()]
+        # Double-check allowed domains (cached)
+        from django.core.cache import cache
+        allowed_domains = cache.get('smtp_allowed_domains')
+        if allowed_domains is None:
+            allowed_domains = [d.domain async for d in AllowedDomain.objects.all()]
+            cache.set('smtp_allowed_domains', allowed_domains, 300)
         valid_rcpts = []
         for rcpt in envelope.rcpt_tos:
             bare = rcpt

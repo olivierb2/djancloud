@@ -1664,6 +1664,8 @@ class AllowedDomainCreateView(LoginRequiredMixin, View):
         if AllowedDomain.objects.filter(domain=domain).exists():
             return JsonResponse({'error': 'Domain already exists'}, status=400)
         obj = AllowedDomain.objects.create(domain=domain)
+        from django.core.cache import cache
+        cache.delete('smtp_allowed_domains')
         return JsonResponse({'id': obj.id, 'domain': obj.domain})
 
 
@@ -1672,6 +1674,8 @@ class AllowedDomainDeleteView(LoginRequiredMixin, View):
         if request.user.role != 'admin':
             return JsonResponse({'error': 'Forbidden'}, status=403)
         AllowedDomain.objects.filter(id=domain_id).delete()
+        from django.core.cache import cache
+        cache.delete('smtp_allowed_domains')
         return JsonResponse({'ok': True})
 
 
