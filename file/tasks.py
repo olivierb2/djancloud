@@ -82,6 +82,87 @@ def send_email_task(from_address, to_addresses, cc_addresses, subject,
 
 
 @shared_task
+def send_event_invitation(event_id, invitee_id):
+    """Send a calendar invitation email."""
+    from .models import Event, EventInvitee
+
+    try:
+        invitee = EventInvitee.objects.select_related('event__calendar__owner').get(pk=invitee_id)
+    except EventInvitee.DoesNotExist:
+        return
+
+    if invitee.notified:
+        return
+
+    event = invitee.event
+    organizer = event.calendar.owner
+    from_address = organizer.email or f'{organizer.username}@localhost'
+
+    smtp_host = getattr(settings, 'SMTP_RELAY_HOST', None)
+    smtp_port = getattr(settings, 'SMTP_RELAY_PORT', 587)
+    smtp_user = getattr(settings, 'SMTP_RELAY_USER', None)
+    smtp_pass = getattr(settings, 'SMTP_RELAY_PASSWORD', None)
+    smtp_tls = getattr(settings, 'SMTP_RELAY_USE_TLS', True)
+
+    if not smtp_host:
+        logger.warning("No SMTP_RELAY_HOST configured, cannot send invitation")
+        invitee.notified = True
+        invitee.save(update_fields=['notified'])
+        return
+
+    # Build email
+    start_str = event.dtstart.strftime('%A %d %B %Y %H:%M') if event.dtstart else 'TBD'
+    end_str = event.dtend.strftime('%H:%M') if event.dtend else ''
+    time_str = f"{start_str} - {end_str}" if end_str else start_str
+
+    subject = f"Invitation: {event.summary or '(No title)'}"
+    body_text = (
+        f"You have been invited to an event.\n\n"
+        f"Title: {event.summary or '(No title)'}\n"
+        f"When: {time_str}\n"
+    )
+    if event.location:
+        body_text += f"Where: {event.location}\n"
+    if event.description:
+        body_text += f"\n{event.description}\n"
+    body_text += f"\nOrganizer: {organizer.get_full_name() or organizer.username} <{from_address}>\n"
+
+    body_html = (
+        f"<h2>{event.summary or '(No title)'}</h2>"
+        f"<p><strong>When:</strong> {time_str}</p>"
+    )
+    if event.location:
+        body_html += f"<p><strong>Where:</strong> {event.location}</p>"
+    if event.description:
+        body_html += f"<p>{event.description}</p>"
+    body_html += f"<p><strong>Organizer:</strong> {organizer.get_full_name() or organizer.username}</p>"
+
+    msg = MIMEMultipart('alternative')
+    msg['From'] = from_address
+    msg['To'] = invitee.email
+    msg['Subject'] = subject
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid()
+    msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+    msg.attach(MIMEText(body_html, 'html', 'utf-8'))
+
+    try:
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+        if smtp_tls:
+            server.starttls()
+        if smtp_user and smtp_pass:
+            server.login(smtp_user, smtp_pass)
+        server.sendmail(from_address, [invitee.email], msg.as_string())
+        server.quit()
+        invitee.notified = True
+        invitee.save(update_fields=['notified'])
+        logger.info("Invitation sent for event %s to %s", event.summary, invitee.email)
+    except Exception as e:
+        logger.error("Failed to send invitation to %s: %s", invitee.email, e)
+        raise
+
+
+@shared_task
 def send_out_of_office_reply(user_id, sender_email, original_subject):
     """Send an out-of-office auto-reply if conditions are met."""
     from .models import User, OutOfOffice, OutOfOfficeReply

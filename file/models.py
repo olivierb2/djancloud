@@ -277,6 +277,27 @@ class Event(models.Model):
         return f"{self.calendar.owner.username}/{self.calendar.name}/{self.summary or self.uid}"
 
 
+class EventInvitee(models.Model):
+    STATUS_CHOICES = [
+        ('needs-action', 'Needs Action'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+        ('tentative', 'Tentative'),
+    ]
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='invitees')
+    email = models.EmailField()
+    name = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='needs-action')
+    notified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('event', 'email')]
+
+    def __str__(self):
+        return f"{self.name or self.email} ({self.status})"
+
+
 # CardDAV Models
 
 class AddressBook(models.Model):

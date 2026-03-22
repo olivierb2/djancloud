@@ -28,7 +28,31 @@
           <input v-model="newEvent.description" type="text" placeholder="Description (optional)"
                  class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none mb-3">
           <input v-model="newEvent.location" type="text" placeholder="Location (optional)"
-                 class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none mb-4">
+                 class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none mb-3">
+
+          <!-- Invitees -->
+          <div class="mb-4">
+            <label class="block text-xs text-gray-500 mb-1">Invite people</label>
+            <div class="flex flex-wrap items-center gap-1 rounded-lg border border-gray-300 px-2 py-1.5 min-h-[2.25rem]">
+              <span v-for="(inv, i) in newEvent.invitees" :key="i"
+                    class="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {{ inv.name || inv.email }}
+                <button type="button" @click="newEvent.invitees.splice(i, 1)" class="text-brand-500 hover:text-brand-700">&times;</button>
+              </span>
+              <input type="text" v-model="inviteeQuery" placeholder="Type name or email..."
+                     class="flex-1 min-w-[150px] border-0 p-0 text-sm outline-none focus:ring-0"
+                     @input="searchInvitees" @keydown.enter.prevent="addInviteeFromQuery"
+                     @keydown.comma.prevent="addInviteeFromQuery">
+            </div>
+            <div v-if="inviteeSuggestions.length" class="mt-1 max-h-32 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+              <button v-for="c in inviteeSuggestions" :key="c.email" type="button"
+                      @click="addInvitee(c)"
+                      class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                {{ c.label }}
+              </button>
+            </div>
+          </div>
+
           <div class="flex justify-end gap-2">
             <button type="button" @click="showCreateModal = false"
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -48,6 +72,57 @@
           <p v-if="selectedEvent.endStr"><span class="font-medium text-gray-500">End:</span> {{ selectedEvent.endStr }}</p>
           <p v-if="selectedEvent.location"><span class="font-medium text-gray-500">Location:</span> {{ selectedEvent.location }}</p>
           <p v-if="selectedEvent.description" class="mt-2 text-gray-700">{{ selectedEvent.description }}</p>
+        </div>
+
+        <!-- Invitees -->
+        <div v-if="selectedEvent.invitees && selectedEvent.invitees.length" class="mb-4 border-t border-gray-100 pt-3">
+          <h4 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Invitees</h4>
+          <div class="space-y-1">
+            <div v-for="inv in selectedEvent.invitees" :key="inv.id" class="flex items-center justify-between text-sm">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full flex-shrink-0"
+                      :class="{
+                        'bg-green-500': inv.status === 'accepted',
+                        'bg-red-500': inv.status === 'declined',
+                        'bg-yellow-500': inv.status === 'tentative',
+                        'bg-gray-400': inv.status === 'needs-action',
+                      }"></span>
+                <span class="text-gray-700">{{ inv.name || inv.email }}</span>
+                <span v-if="inv.name" class="text-gray-400 text-xs">{{ inv.email }}</span>
+              </div>
+              <button v-if="canWrite" type="button" @click="removeInvitee(inv.id)"
+                      class="text-xs text-red-500 hover:text-red-700">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add invitee to existing event -->
+        <div v-if="canWrite" class="mb-4 border-t border-gray-100 pt-3">
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input type="text" v-model="detailInviteeQuery" placeholder="Add invitee..."
+                     class="block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                     @input="searchDetailInvitees" @keydown.enter.prevent="addDetailInviteeFromQuery">
+              <div v-if="detailInviteeSuggestions.length" class="absolute left-0 top-full mt-1 w-full max-h-32 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+                <button v-for="c in detailInviteeSuggestions" :key="c.email" type="button"
+                        @click="addDetailInvitee(c)"
+                        class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                  {{ c.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Move to another calendar -->
+        <div v-if="otherCalendars.length > 0 && canWrite" class="flex items-center gap-2 mb-4 border-t border-gray-100 pt-3">
+          <label class="text-sm text-gray-500 flex-shrink-0">Move to</label>
+          <select v-model="moveToCalendarId" class="flex-1 rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+            <option value="">Select calendar...</option>
+            <option v-for="c in otherCalendars" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <button type="button" @click="moveEvent" :disabled="!moveToCalendarId"
+                  class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">Move</button>
         </div>
         <div class="flex justify-between">
           <button v-if="selectedEvent.deleteUrl" type="button" @click="deleteEvent"
@@ -79,6 +154,8 @@ export default {
     canWrite: Boolean,
     calendarColor: { type: String, default: '#3498db' },
     csrfToken: String,
+    calendarsJson: { type: String, default: '[]' },
+    currentCalendarId: { type: [String, Number], default: '' },
   },
 
   data() {
@@ -86,15 +163,29 @@ export default {
       calendar: null,
       showCreateModal: false,
       showDetailModal: false,
-      newEvent: { summary: '', allDay: false, dtstart: '', dtend: '', description: '', location: '' },
-      selectedEvent: { title: '', startStr: '', endStr: '', location: '', description: '', deleteUrl: '' },
+      newEvent: { summary: '', allDay: false, dtstart: '', dtend: '', description: '', location: '', invitees: [] },
+      inviteeQuery: '',
+      inviteeSuggestions: [],
+      selectedEvent: { title: '', startStr: '', endStr: '', location: '', description: '', deleteUrl: '', eventId: '', invitees: [] },
+      detailInviteeQuery: '',
+      detailInviteeSuggestions: [],
+      moveToCalendarId: '',
     };
+  },
+
+  computed: {
+    otherCalendars() {
+      try {
+        const all = JSON.parse(this.calendarsJson);
+        return all.filter(c => String(c.id) !== String(this.currentCalendarId));
+      } catch { return []; }
+    },
   },
 
   mounted() {
     this.calendar = new Calendar(this.$refs.calendarEl, {
       plugins: [dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin],
-      initialView: 'dayGridMonth',
+      initialView: 'timeGridWeek',
       headerToolbar: {
         left: 'prev,today,next',
         center: 'title',
@@ -116,7 +207,9 @@ export default {
 
       select: (info) => {
         if (!this.canWrite) return;
-        this.newEvent = { summary: '', description: '', location: '', allDay: info.allDay, dtstart: '', dtend: '' };
+        this.newEvent = { summary: '', description: '', location: '', allDay: info.allDay, dtstart: '', dtend: '', invitees: [] };
+        this.inviteeQuery = '';
+        this.inviteeSuggestions = [];
         if (info.allDay) {
           this.newEvent.dtstart = info.startStr;
           const end = new Date(info.end);
@@ -139,7 +232,12 @@ export default {
           location: ev.extendedProps.location || '',
           description: ev.extendedProps.description || '',
           deleteUrl: ev.extendedProps.deleteUrl || '',
+          eventId: ev.id,
+          invitees: ev.extendedProps.invitees || [],
         };
+        this.moveToCalendarId = '';
+        this.detailInviteeQuery = '';
+        this.detailInviteeSuggestions = [];
         this.showDetailModal = true;
       },
     });
@@ -147,6 +245,81 @@ export default {
   },
 
   methods: {
+    // --- Invitee helpers ---
+    searchInvitees() {
+      clearTimeout(this._invTimer);
+      const q = this.inviteeQuery.trim();
+      if (q.length < 1) { this.inviteeSuggestions = []; return; }
+      this._invTimer = setTimeout(() => {
+        fetch(`/api/contacts/search/?q=${encodeURIComponent(q)}`)
+          .then(r => r.json())
+          .then(data => { this.inviteeSuggestions = data; });
+      }, 200);
+    },
+
+    addInvitee(contact) {
+      if (!this.newEvent.invitees.some(i => i.email === contact.email)) {
+        this.newEvent.invitees.push({ name: contact.name, email: contact.email });
+      }
+      this.inviteeQuery = '';
+      this.inviteeSuggestions = [];
+    },
+
+    addInviteeFromQuery() {
+      const q = this.inviteeQuery.trim();
+      if (q && q.includes('@')) {
+        this.addInvitee({ name: '', email: q });
+      }
+    },
+
+    searchDetailInvitees() {
+      clearTimeout(this._detInvTimer);
+      const q = this.detailInviteeQuery.trim();
+      if (q.length < 1) { this.detailInviteeSuggestions = []; return; }
+      this._detInvTimer = setTimeout(() => {
+        fetch(`/api/contacts/search/?q=${encodeURIComponent(q)}`)
+          .then(r => r.json())
+          .then(data => { this.detailInviteeSuggestions = data; });
+      }, 200);
+    },
+
+    addDetailInvitee(contact) {
+      this.detailInviteeQuery = '';
+      this.detailInviteeSuggestions = [];
+      fetch(`/api/events/${this.selectedEvent.eventId}/invitees/add/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
+        body: JSON.stringify({ email: contact.email, name: contact.name || '' }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { alert(data.error); return; }
+          this.selectedEvent.invitees.push(data);
+          this.calendar.refetchEvents();
+        });
+    },
+
+    addDetailInviteeFromQuery() {
+      const q = this.detailInviteeQuery.trim();
+      if (q && q.includes('@')) {
+        this.addDetailInvitee({ name: '', email: q });
+      }
+    },
+
+    removeInvitee(inviteeId) {
+      fetch(`/api/events/${this.selectedEvent.eventId}/invitees/${inviteeId}/remove/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': this.csrfToken },
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            this.selectedEvent.invitees = this.selectedEvent.invitees.filter(i => i.id !== inviteeId);
+            this.calendar.refetchEvents();
+          }
+        });
+    },
+
     createEvent() {
       const form = new FormData();
       form.append('csrfmiddlewaretoken', this.csrfToken);
@@ -156,6 +329,8 @@ export default {
       form.append('dtstart', this.newEvent.dtstart);
       form.append('dtend', this.newEvent.dtend);
       if (this.newEvent.allDay) form.append('all_day', 'on');
+      const inviteeStrs = this.newEvent.invitees.map(i => i.name ? `${i.name} <${i.email}>` : i.email);
+      form.append('invitees', inviteeStrs.join(', '));
 
       fetch(this.createUrl, {
         method: 'POST',
@@ -165,6 +340,24 @@ export default {
         this.showCreateModal = false;
         this.calendar.refetchEvents();
       });
+    },
+
+    moveEvent() {
+      if (!this.moveToCalendarId || !this.selectedEvent.eventId) return;
+      fetch('/api/events/' + this.selectedEvent.eventId + '/move/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': this.csrfToken,
+        },
+        body: JSON.stringify({ calendar_id: parseInt(this.moveToCalendarId) }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { alert(data.error); return; }
+          this.showDetailModal = false;
+          this.calendar.refetchEvents();
+        });
     },
 
     deleteEvent() {

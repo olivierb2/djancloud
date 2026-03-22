@@ -20,6 +20,7 @@ from .models import (
     Mailbox, Email, EmailAttachment, EmailSignature,
     AllowedDomain, OutOfOffice,
     ContactGroup, ContactGroupFolder,
+    EventInvitee,
 )
 from django.views import View
 from djangodav.views.views import DavView
@@ -1951,6 +1952,13 @@ class CalendarWebView(LoginRequiredMixin, View):
             except Calendar.DoesNotExist:
                 selected_calendar = None
 
+        # All calendars for move dropdown
+        all_cals = own_calendars + shareable_calendars + shared_calendars
+        all_calendars_json = json.dumps([
+            {'id': c.id, 'name': c.display_name}
+            for c in all_cals
+        ])
+
         return render(request, 'file/calendars.html', {
             'calendars': own_calendars,
             'shareable_calendars': shareable_calendars,
@@ -1959,6 +1967,7 @@ class CalendarWebView(LoginRequiredMixin, View):
             'events': events,
             'shares': shares,
             'can_write': can_write,
+            'all_calendars_json': all_calendars_json,
         })
 
 
@@ -2084,6 +2093,10 @@ class CalendarEventsApiView(LoginRequiredMixin, View):
                 'extendedProps': {
                     'description': ev.description or '',
                     'location': ev.location or '',
+                    'invitees': [
+                        {'id': i.id, 'email': i.email, 'name': i.name, 'status': i.status}
+                        for i in ev.invitees.all()
+                    ],
                 },
             }
             if can_write:
@@ -2166,10 +2179,77 @@ class EventCreateView(LoginRequiredMixin, View):
             dtend=dtend,
             all_day=all_day,
         )
+
+        # Handle invitees
+        invitees_str = request.POST.get('invitees', '').strip()
+        if invitees_str:
+            from .tasks import send_event_invitation
+            for entry in invitees_str.split(','):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                # Parse "Name <email>" or just "email"
+                if '<' in entry and '>' in entry:
+                    name = entry.split('<')[0].strip()
+                    email = entry.split('<')[1].split('>')[0].strip()
+                else:
+                    name = ''
+                    email = entry
+                if email:
+                    inv, _ = EventInvitee.objects.get_or_create(
+                        event=event, email=email.lower(),
+                        defaults={'name': name})
+                    if not inv.notified:
+                        send_event_invitation.delay(event.id, inv.id)
+
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'ok': True})
         messages.success(request, f'Event "{summary}" created.')
         return redirect(f'/calendars/?calendar={calendar_id}')
+
+
+class EventInviteeAddView(LoginRequiredMixin, View):
+    """Add an invitee to an existing event."""
+    def post(self, request, event_id):
+        event = get_object_or_404(Event, id=event_id)
+        cal = event.calendar
+        if cal.owner_id != request.user.id:
+            share = CalendarShare.objects.filter(
+                calendar=cal, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'Forbidden'}, status=403)
+
+        data = json.loads(request.body)
+        email = data.get('email', '').strip().lower()
+        name = data.get('name', '').strip()
+        if not email:
+            return JsonResponse({'error': 'Email required'}, status=400)
+
+        inv, created = EventInvitee.objects.get_or_create(
+            event=event, email=email, defaults={'name': name})
+        if created:
+            from .tasks import send_event_invitation
+            send_event_invitation.delay(event.id, inv.id)
+
+        return JsonResponse({
+            'id': inv.id, 'email': inv.email, 'name': inv.name,
+            'status': inv.status, 'created': created,
+        })
+
+
+class EventInviteeRemoveView(LoginRequiredMixin, View):
+    def post(self, request, event_id, invitee_id):
+        event = get_object_or_404(Event, id=event_id)
+        cal = event.calendar
+        if cal.owner_id != request.user.id:
+            share = CalendarShare.objects.filter(
+                calendar=cal, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'Forbidden'}, status=403)
+        EventInvitee.objects.filter(id=invitee_id, event=event).delete()
+        return JsonResponse({'ok': True})
 
 
 class EventDeleteView(LoginRequiredMixin, View):
@@ -2186,6 +2266,46 @@ class EventDeleteView(LoginRequiredMixin, View):
             return JsonResponse({'ok': True})
         messages.success(request, 'Event deleted.')
         return redirect(f'/calendars/?calendar={cal.id}')
+
+
+class EventMoveView(LoginRequiredMixin, View):
+    """Move an event to a different calendar."""
+    def post(self, request, event_id):
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        dest_cal_id = data.get('calendar_id')
+        if not dest_cal_id:
+            return JsonResponse({'error': 'calendar_id required'}, status=400)
+
+        event = get_object_or_404(Event, id=event_id)
+        src_cal = event.calendar
+
+        # Check write access on source
+        if src_cal.owner_id != request.user.id:
+            share = CalendarShare.objects.filter(
+                calendar=src_cal, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'No write access to source calendar'}, status=403)
+
+        # Check write access on destination
+        dest_cal = get_object_or_404(Calendar, id=dest_cal_id)
+        if dest_cal.owner_id != request.user.id:
+            share = CalendarShare.objects.filter(
+                calendar=dest_cal, user=request.user,
+                permission__in=['write', 'admin']).first()
+            if not share:
+                return JsonResponse({'error': 'No write access to destination calendar'}, status=403)
+
+        if event.calendar_id == dest_cal.id:
+            return JsonResponse({'error': 'Event is already in this calendar'}, status=400)
+
+        event.calendar = dest_cal
+        event.save(update_fields=['calendar'])
+        return JsonResponse({'ok': True})
 
 
 # ─── Contacts Web Views ──────────────────────────────────────

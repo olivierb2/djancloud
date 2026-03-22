@@ -10,6 +10,8 @@ if (el) {
     canWrite: el.dataset.canWrite === 'true',
     calendarColor: el.dataset.calendarColor || '#3498db',
     csrfToken: el.dataset.csrfToken,
+    calendarsJson: el.dataset.calendarsJson || '[]',
+    currentCalendarId: el.dataset.currentCalendarId || '',
   });
   app.mount(el);
 }
