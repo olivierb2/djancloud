@@ -50,10 +50,11 @@
                         </svg>
                         <span class="truncate">{{ ab.display_name }}</span>
                     </a>
-                    <button type="button" onclick="event.stopPropagation(); openShareModal('addressbook', {{ ab.id }}, '{{ ab.display_name|escapejs }}')"
-                            class="hidden group-hover:block flex-shrink-0 rounded p-0.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Share">
+                    <button type="button" onclick="event.stopPropagation(); openSettingsModal('addressbook', {{ ab.id }}, '{{ ab.display_name|escapejs }}')"
+                            class="hidden group-hover:block flex-shrink-0 rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100" title="Settings">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                         </svg>
                     </button>
                 </div>
@@ -113,19 +114,6 @@
                         </svg>
                         New group
                     </button>
-                    {% endif %}
-                    {% if selected_addressbook.owner == user and selected_addressbook.name != 'contacts' %}
-                    <form method="post" action="{% url 'addressbook_delete' addressbook_id=selected_addressbook.id %}" class="inline"
-                          onsubmit="return confirm('Delete address book \'{{ selected_addressbook.display_name|escapejs }}\' and all its contacts?')">
-                        {% csrf_token %}
-                        <button type="submit"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                            Delete
-                        </button>
-                    </form>
                     {% endif %}
                 </div>
             </div>
@@ -358,26 +346,36 @@
     </div>
 </div>
 
-<!-- Dynamic Share modal -->
-<div id="share-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+<!-- Settings modal -->
+<div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
     <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onclick="event.stopPropagation()">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Share &mdash; <span id="share-modal-title"></span></h3>
-        <div id="share-list" class="mb-4 max-h-60 overflow-y-auto divide-y divide-gray-100">
-            <p class="py-2 text-sm text-gray-400">Loading...</p>
-        </div>
-        <div class="flex items-center gap-2 border-t border-gray-100 pt-4">
-            <input type="text" id="share-username" placeholder="Username" required
-                   class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
-            <select id="share-permission" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4"><span id="settings-modal-title"></span></h3>
+        <form id="settings-rename-form" class="mb-4 border-b border-gray-100 pb-4">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Name</label>
+            <div class="flex gap-2">
+                <input type="text" id="settings-rename-input" required maxlength="255"
+                       class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                <button type="submit"
+                        class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Save</button>
+            </div>
+        </form>
+        <h4 class="text-sm font-semibold text-gray-700 mb-2">Members</h4>
+        <div id="settings-members-list" class="mb-3 max-h-48 overflow-y-auto divide-y divide-gray-100"></div>
+        <div class="flex items-center gap-2 border-t border-gray-100 pt-3 mb-4">
+            <input type="text" id="settings-add-username" placeholder="Username"
+                   class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <select id="settings-add-permission" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
                 <option value="read">Read</option>
                 <option value="write">Write</option>
             </select>
             <button type="button" onclick="addShare()"
-                    class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Add</button>
+                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Add</button>
         </div>
-        <div id="share-error" class="hidden mt-2 text-sm text-red-600"></div>
-        <div class="flex justify-end mt-4">
-            <button type="button" onclick="closeModal('share-modal')"
+        <div id="settings-error" class="hidden mb-3 text-sm text-red-600"></div>
+        <div class="flex items-center justify-between border-t border-gray-100 pt-4">
+            <button type="button" onclick="deleteSharedItem()"
+                    class="text-sm text-red-500 hover:text-red-700">Delete</button>
+            <button type="button" onclick="closeModal('settings-modal')"
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
         </div>
     </div>
@@ -629,61 +627,50 @@ function createGroup(e) {
     return false;
 }
 
-var shareType = '', shareId = null;
+var settingsType = '', settingsId = null;
 
-function openShareModal(type, id, name) {
-    shareType = type;
-    shareId = id;
-    document.getElementById('share-modal-title').textContent = name;
-    document.getElementById('share-error').classList.add('hidden');
-    document.getElementById('share-username').value = '';
-    openModal('share-modal');
-    loadShares();
+function openSettingsModal(type, id, name) {
+    settingsType = type;
+    settingsId = id;
+    document.getElementById('settings-modal-title').textContent = name;
+    document.getElementById('settings-rename-input').value = name;
+    document.getElementById('settings-error').classList.add('hidden');
+    document.getElementById('settings-add-username').value = '';
+    openModal('settings-modal');
+    loadMembers();
 }
 
-function getShareUrl() {
-    return '/contacts/addressbooks/' + shareId + '/share/';
-}
-
-function getShareDeleteUrl(userId) {
-    return '/contacts/addressbooks/' + shareId + '/share/' + userId + '/delete/';
-}
-
-function loadShares() {
-    var list = document.getElementById('share-list');
+function loadMembers() {
+    var list = document.getElementById('settings-members-list');
     list.innerHTML = '<p class="py-2 text-sm text-gray-400">Loading...</p>';
-    fetch(getShareUrl(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    fetch('/contacts/addressbooks/' + settingsId + '/share/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.shares || data.shares.length === 0) {
-                list.innerHTML = '<p class="py-2 text-sm text-gray-400">Not shared with anyone yet.</p>';
+                list.innerHTML = '<p class="py-2 text-sm text-gray-400">No members yet.</p>';
                 return;
             }
             list.innerHTML = '';
             data.shares.forEach(function(s) {
                 var row = document.createElement('div');
-                row.className = 'flex items-center justify-between py-2';
+                row.className = 'flex items-center justify-between py-2 px-1';
                 row.innerHTML =
-                    '<div class="flex items-center gap-2">' +
-                        '<span class="text-sm font-medium text-gray-900">' + s.username + '</span>' +
-                        '<span class="text-xs text-gray-400">(' + s.permission + ')</span>' +
-                    '</div>' +
-                    '<button type="button" class="rounded p-1 text-gray-400 hover:text-red-600 hover:bg-red-50" title="Remove">' +
-                        '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' +
-                    '</button>';
-                row.querySelector('button').addEventListener('click', function() { removeShare(s.user_id); });
+                    '<div class="flex items-center gap-2"><span class="text-sm text-gray-700">' + s.username +
+                    '</span><span class="text-xs text-gray-400">(' + s.permission + ')</span></div>' +
+                    '<button type="button" class="text-xs text-red-500 hover:text-red-700">Remove</button>';
+                row.querySelector('button').addEventListener('click', function() { removeMember(s.user_id); });
                 list.appendChild(row);
             });
         });
 }
 
 function addShare() {
-    var username = document.getElementById('share-username').value.trim();
-    var permission = document.getElementById('share-permission').value;
-    var errEl = document.getElementById('share-error');
+    var username = document.getElementById('settings-add-username').value.trim();
+    var permission = document.getElementById('settings-add-permission').value;
+    var errEl = document.getElementById('settings-error');
     errEl.classList.add('hidden');
     if (!username) return;
-    fetch(getShareUrl(), {
+    fetch('/contacts/addressbooks/' + settingsId + '/share/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({ username: username, permission: permission })
@@ -691,17 +678,40 @@ function addShare() {
     .then(function(r) { return r.json(); })
     .then(function(data) {
         if (data.error) { errEl.textContent = data.error; errEl.classList.remove('hidden'); return; }
-        document.getElementById('share-username').value = '';
-        loadShares();
+        document.getElementById('settings-add-username').value = '';
+        loadMembers();
     });
 }
 
-function removeShare(userId) {
-    fetch(getShareDeleteUrl(userId), {
+function removeMember(userId) {
+    fetch('/contacts/addressbooks/' + settingsId + '/share/' + userId + '/delete/', {
         method: 'POST',
         headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function() { loadMembers(); });
+}
+
+document.getElementById('settings-rename-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var newName = document.getElementById('settings-rename-input').value.trim();
+    if (!newName) return;
+    fetch('/api/addressbooks/' + settingsId + '/rename/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ display_name: newName })
     })
-    .then(function() { loadShares(); });
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { alert(data.error); return; }
+        window.location.reload();
+    });
+});
+
+function deleteSharedItem() {
+    if (!confirm('Delete this address book and all its contacts?')) return;
+    fetch('/contacts/addressbooks/' + settingsId + '/delete/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrf }
+    }).then(function() { window.location.href = '/contacts/'; });
 }
 </script>
 {% endblock %}

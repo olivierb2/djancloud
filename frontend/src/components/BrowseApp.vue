@@ -468,8 +468,21 @@
   <teleport to="body">
     <div v-if="showMembersModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showMembersModal = false">
       <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" @click.stop>
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Members &mdash; {{ membersModalTitle }}</h3>
-        <div class="mb-4 max-h-60 overflow-y-auto divide-y divide-gray-100">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">{{ membersModalTitle }}</h3>
+
+        <!-- Rename -->
+        <form @submit.prevent="renameSharedFolder" class="mb-4 border-b border-gray-100 pb-4">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Name</label>
+          <div class="flex gap-2">
+            <input v-model="renameSharedName" type="text" required maxlength="255"
+                   class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+            <button type="submit"
+                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Save</button>
+          </div>
+        </form>
+
+        <h4 class="text-sm font-semibold text-gray-700 mb-2">Members</h4>
+        <div class="mb-4 max-h-48 overflow-y-auto divide-y divide-gray-100">
           <div v-if="membersLoading" class="text-sm text-gray-400 py-2">Loading...</div>
           <div v-for="m in members" :key="m.user_id" class="flex items-center gap-2 py-1.5">
             <span class="flex-1 text-sm text-gray-700">{{ m.username }}</span>
@@ -496,7 +509,8 @@
           </select>
           <button type="button" @click="addMember" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Add</button>
         </div>
-        <div class="flex justify-end mt-4">
+        <div class="flex items-center justify-between mt-4 border-t border-gray-100 pt-4">
+          <button type="button" @click="deleteSharedFolder" class="text-sm text-red-500 hover:text-red-700">Delete</button>
           <button type="button" @click="showMembersModal = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
         </div>
       </div>
@@ -1012,6 +1026,7 @@ export default defineComponent({
     function openMembersModal(sfId, sfName) {
       currentSfId = sfId;
       membersModalTitle.value = sfName;
+      renameSharedName.value = sfName;
       showMembersModal.value = true;
       loadMembers();
       if (allUsers.value.length === 0) {
@@ -1059,6 +1074,39 @@ export default defineComponent({
           addMemberUserId.value = '';
           loadMembers();
         });
+    }
+
+    const renameSharedName = ref('');
+
+    async function renameSharedFolder() {
+      if (!renameSharedName.value.trim() || !currentSfId) return;
+      try {
+        const r = await apiFetch('/api/shared-folders/' + currentSfId + '/rename/', {
+          method: 'POST',
+          body: JSON.stringify({ name: renameSharedName.value.trim() }),
+        });
+        const data = await r.json();
+        if (data.error) { addToast(data.error, 'error'); return; }
+        showMembersModal.value = false;
+        addToast('Renamed successfully.', 'success');
+        navigateToFolder(currentPath.value);
+      } catch (err) {
+        addToast('Rename failed.', 'error');
+      }
+    }
+
+    async function deleteSharedFolder() {
+      if (!currentSfId || !confirm('Delete this shared folder and all its contents?')) return;
+      try {
+        await apiFetch('/api/shared-folders/' + currentSfId + '/delete/', {
+          method: 'DELETE',
+        });
+        showMembersModal.value = false;
+        addToast('Shared folder deleted.', 'success');
+        navigateToFolder('');
+      } catch (err) {
+        addToast('Delete failed.', 'error');
+      }
     }
 
     // -- Move picker --
@@ -1259,6 +1307,7 @@ export default defineComponent({
       // Members
       membersModalTitle, members, membersLoading, allUsers,
       addMemberUserId, openMembersModal, updateMember, removeMember, addMember,
+      renameSharedName, renameSharedFolder, deleteSharedFolder,
 
       // Internal drag & drop
       dragItem, dropTargetId,

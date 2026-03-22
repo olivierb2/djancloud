@@ -1493,6 +1493,36 @@ class SharedFolderCreateView(LoginRequiredMixin, View):
         return JsonResponse({'id': sf.id, 'name': sf.name})
 
 
+class SharedFolderRenameView(LoginRequiredMixin, View):
+    def post(self, request, sf_id):
+        sf = get_object_or_404(SharedFolder, id=sf_id)
+        if request.user.role != 'admin' and not sf.memberships.filter(
+                user=request.user, permission='admin').exists():
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        data = json.loads(request.body)
+        name = data.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'Name required'}, status=400)
+        if '/' in name:
+            return JsonResponse({'error': 'Name cannot contain /'}, status=400)
+        if SharedFolder.objects.filter(name=name).exclude(pk=sf.pk).exists():
+            return JsonResponse({'error': 'Name already in use'}, status=400)
+        sf.name = name
+        sf.save(update_fields=['name'])
+        return JsonResponse({'ok': True})
+
+
+class SharedFolderDeleteView(LoginRequiredMixin, View):
+    def delete(self, request, sf_id):
+        sf = get_object_or_404(SharedFolder, id=sf_id)
+        if request.user.role != 'admin' and not sf.memberships.filter(
+                user=request.user, permission='admin').exists():
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        sf.root_folder.delete()
+        sf.delete()
+        return JsonResponse({'ok': True})
+
+
 class SharedFolderMembersView(LoginRequiredMixin, View):
     def _can_manage(self, request, sf):
         if request.user.role == 'admin':
@@ -1997,6 +2027,20 @@ class CalendarCreateView(LoginRequiredMixin, View):
         return redirect('calendars')
 
 
+class CalendarRenameView(LoginRequiredMixin, View):
+    def post(self, request, calendar_id):
+        cal = get_object_or_404(Calendar, id=calendar_id)
+        if cal.owner_id != request.user.id:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        data = json.loads(request.body)
+        name = data.get('display_name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'Name required'}, status=400)
+        cal.display_name = name
+        cal.save(update_fields=['display_name'])
+        return JsonResponse({'ok': True})
+
+
 class CalendarDeleteView(LoginRequiredMixin, View):
     def post(self, request, calendar_id):
         cal = get_object_or_404(Calendar, id=calendar_id, owner=request.user)
@@ -2400,6 +2444,20 @@ class AddressBookCreateView(LoginRequiredMixin, View):
         )
         messages.success(request, f'Address book "{display_name}" created.')
         return redirect('contacts')
+
+
+class AddressBookRenameView(LoginRequiredMixin, View):
+    def post(self, request, addressbook_id):
+        ab = get_object_or_404(AddressBook, id=addressbook_id)
+        if ab.owner_id != request.user.id:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        data = json.loads(request.body)
+        name = data.get('display_name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'Name required'}, status=400)
+        ab.display_name = name
+        ab.save(update_fields=['display_name'])
+        return JsonResponse({'ok': True})
 
 
 class AddressBookDeleteView(LoginRequiredMixin, View):
