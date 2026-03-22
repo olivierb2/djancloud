@@ -152,9 +152,11 @@ export default {
           history.replaceState(null, '', url);
           // Update list selection
           document.querySelectorAll('.email-row').forEach(row => {
-            row.classList.remove('bg-brand-50', 'border-l-2', 'border-brand-600');
+            row.classList.remove('bg-brand-50');
+            row.style.borderLeft = '';
             if (row.dataset.emailId == emailId) {
-              row.classList.add('bg-brand-50', 'border-l-2', 'border-brand-600');
+              row.classList.add('bg-brand-50');
+              row.style.borderLeft = '2px solid var(--color-brand-600, #2563eb)';
               row.classList.remove('bg-blue-50/30');
               row.dataset.isRead = 'true';
               // Update envelope icon
