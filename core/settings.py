@@ -162,6 +162,9 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000  # 500 MB
 FILE_UPLOAD_TEMP_DIR = None  # Use system temp dir
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
 
+# LDAP Server
+LDAP_BASE_DN = 'dc=djancloud,dc=local'
+
 # Celery
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
