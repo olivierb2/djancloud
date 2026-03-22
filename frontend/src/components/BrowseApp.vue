@@ -952,22 +952,26 @@ export default defineComponent({
     let dragCounter = 0;
 
     function onDragEnter(e) {
+      if (dragItem.value) return; // Internal drag, skip upload overlay
       e.preventDefault();
       dragCounter++;
       if (canWrite.value) showDropZone.value = true;
     }
 
     function onDragLeave(e) {
+      if (dragItem.value) return;
       e.preventDefault();
       dragCounter--;
       if (dragCounter === 0) showDropZone.value = false;
     }
 
     function onDragOver(e) {
+      if (dragItem.value) return;
       e.preventDefault();
     }
 
     function onDrop(e) {
+      if (dragItem.value) return;
       e.preventDefault();
       dragCounter = 0;
       showDropZone.value = false;
