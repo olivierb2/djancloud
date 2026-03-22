@@ -2,7 +2,7 @@
   <div>
     <a
       :href="node.url_path ? '/browse/' + node.url_path : '/browse/'"
-      class="flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none no-underline transition-colors"
+      class="group flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-sm select-none no-underline transition-colors"
       :class="[
         isActive ? 'bg-brand-50 text-brand-700 font-medium' : 'text-gray-700 hover:bg-gray-100',
         isDropTarget ? 'ring-2 ring-brand-400 bg-brand-50' : ''
@@ -75,7 +75,7 @@
       <!-- Settings button for root shared folders -->
       <svg
         v-if="iconType === 'shared' && depth === 0 && node.sf_id"
-        class="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 flex-shrink-0 cursor-pointer"
+        class="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 flex-shrink-0 cursor-pointer hidden group-hover:block"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
