@@ -137,14 +137,55 @@ def send_event_invitation(event_id, invitee_id):
         body_html += f"<p>{event.description}</p>"
     body_html += f"<p><strong>Organizer:</strong> {organizer.get_full_name() or organizer.username}</p>"
 
-    msg = MIMEMultipart('alternative')
+    # Build ICS attachment
+    dtstart_fmt = event.dtstart.strftime('%Y%m%d') if event.all_day else event.dtstart.strftime('%Y%m%dT%H%M%SZ')
+    ics_lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Djancloud//CalDAV//EN',
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        f'UID:{event.uid}',
+        f'SUMMARY:{event.summary or ""}',
+        f'DTSTART{";VALUE=DATE" if event.all_day else ""}:{dtstart_fmt}',
+    ]
+    if event.dtend:
+        dtend_fmt = event.dtend.strftime('%Y%m%d') if event.all_day else event.dtend.strftime('%Y%m%dT%H%M%SZ')
+        ics_lines.append(f'DTEND{";VALUE=DATE" if event.all_day else ""}:{dtend_fmt}')
+    if event.description:
+        ics_lines.append(f'DESCRIPTION:{event.description}')
+    if event.location:
+        ics_lines.append(f'LOCATION:{event.location}')
+    ics_lines.append(f'ORGANIZER;CN={organizer.get_full_name() or organizer.username}:mailto:{from_address}')
+    ics_lines.append(f'ATTENDEE;RSVP=TRUE;PARTSTAT=NEEDS-ACTION;CN={invitee.name or invitee.email}:mailto:{invitee.email}')
+    ics_lines.extend(['END:VEVENT', 'END:VCALENDAR'])
+    ics_data = '\r\n'.join(ics_lines)
+
+    # Build multipart email with ICS
+    msg = MIMEMultipart('mixed')
+    body_part = MIMEMultipart('alternative')
+    body_part.attach(MIMEText(body_text, 'plain', 'utf-8'))
+    body_part.attach(MIMEText(body_html, 'html', 'utf-8'))
+    msg.attach(body_part)
+
+    # ICS as text/calendar inline part (for calendar apps that read it inline)
+    ics_part = MIMEText(ics_data, 'calendar', 'utf-8')
+    ics_part.add_header('Content-Disposition', 'inline', filename='invite.ics')
+    ics_part.replace_header('Content-Type', 'text/calendar; method=REQUEST; charset=utf-8')
+    msg.attach(ics_part)
+
+    # ICS as attachment (for clients that prefer attachment)
+    ics_attachment = MIMEBase('application', 'ics')
+    ics_attachment.set_payload(ics_data.encode('utf-8'))
+    encoders.encode_base64(ics_attachment)
+    ics_attachment.add_header('Content-Disposition', 'attachment', filename='invite.ics')
+    msg.attach(ics_attachment)
+
     msg['From'] = from_address
     msg['To'] = invitee.email
     msg['Subject'] = subject
     msg['Date'] = formatdate(localtime=True)
     msg['Message-ID'] = make_msgid()
-    msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
-    msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
     try:
         server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
