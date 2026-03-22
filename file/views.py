@@ -3616,3 +3616,33 @@ class ApiMoveItemView(LoginRequiredMixin, View):
             self._update_paths_recursive(subfolder)
         for file in folder.files.all():
             file.save()
+
+
+class ApiCopyItemView(LoginRequiredMixin, View):
+    """POST JSON {destination_folder_id} to copy a file."""
+
+    def post(self, request, item_id):
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        destination_id = data.get('destination_folder_id')
+        if not destination_id:
+            return JsonResponse({'error': 'destination_folder_id required'}, status=400)
+
+        item, _ = get_accessible_file(request, item_id, permission='read')
+        dest_folder, _ = get_accessible_folder(request, int(destination_id), permission='write')
+
+        try:
+            content = item.file.read()
+            item.file.seek(0)
+            from django.core.files.base import ContentFile
+            new_file = File.objects.create(
+                parent=dest_folder,
+                file=ContentFile(content, name=item.display_name),
+                owner=item.owner,
+            )
+            return JsonResponse({'ok': True, 'id': new_file.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)

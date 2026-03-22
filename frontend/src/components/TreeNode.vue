@@ -164,7 +164,7 @@ export default defineComponent({
     function onDragOver(e) {
       if (!dragItem.value || !props.node.id) return;
       if (dragItem.value.type === 'folder' && dragItem.value.id === props.node.id) return;
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = (e.ctrlKey || e.metaKey) ? 'copy' : 'move';
       dropTargetId.value = nodeDropId.value;
     }
 

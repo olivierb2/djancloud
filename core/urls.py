@@ -41,7 +41,7 @@ from file.views import (
     SharedMailboxCreateView, SharedMailboxUpdateView, SharedMailboxDeleteView,
     SharedMailboxMemberAddView, SharedMailboxMemberDeleteView,
     BrowseApiView, ApiFolderCreateView, ApiFileUploadView, ApiTextFileCreateView,
-    ApiRenameView, ApiDeleteFileView, ApiDeleteFolderView, ApiMoveItemView,
+    ApiRenameView, ApiDeleteFileView, ApiDeleteFolderView, ApiMoveItemView, ApiCopyItemView,
     SettingsView, AllowedDomainCreateView, AllowedDomainDeleteView,
 )
 from file.caldav_views import (
@@ -199,4 +199,5 @@ urlpatterns = [
     path('api/files/<int:file_id>/delete/', ApiDeleteFileView.as_view(), name='api_file_delete'),
     path('api/folders/<int:folder_id>/delete/', ApiDeleteFolderView.as_view(), name='api_folder_delete'),
     path('api/move/<str:item_type>/<int:item_id>/', ApiMoveItemView.as_view(), name='api_move_item'),
+    path('api/copy/file/<int:item_id>/', ApiCopyItemView.as_view(), name='api_copy_file'),
 ]

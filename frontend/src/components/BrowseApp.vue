@@ -1114,7 +1114,7 @@ export default defineComponent({
 
     function onDragStartItem(e, type, id, name) {
       dragItem.value = { type, id, name };
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.effectAllowed = 'copyMove';
       e.dataTransfer.setData('text/plain', `${type}:${id}`);
       // Make the row semi-transparent
       if (e.target && e.target.closest) {
@@ -1137,7 +1137,7 @@ export default defineComponent({
       // Don't allow dropping a folder on itself
       if (dragItem.value.type === 'folder' && dragItem.value.id === folderId) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = (e.ctrlKey || e.metaKey) ? 'copy' : 'move';
       dropTargetId.value = folderId;
     }
 
@@ -1157,8 +1157,17 @@ export default defineComponent({
         destId = breadcrumbs.value[0].id;
       }
       if (!destId) return;
+      const isCopy = (e.ctrlKey || e.metaKey) && item.type === 'file';
       try {
-        const r = await apiFetch(`/api/move/${item.type}/${item.id}/`, {
+        let url, successMsg;
+        if (isCopy) {
+          url = `/api/copy/file/${item.id}/`;
+          successMsg = `Copied "${item.name}" successfully.`;
+        } else {
+          url = `/api/move/${item.type}/${item.id}/`;
+          successMsg = `Moved "${item.name}" successfully.`;
+        }
+        const r = await apiFetch(url, {
           method: 'POST',
           body: JSON.stringify({ destination_folder_id: destId }),
         });
@@ -1166,11 +1175,11 @@ export default defineComponent({
         if (data.error) {
           addToast(data.error, 'error');
         } else {
-          addToast(`Moved "${item.name}" successfully.`, 'success');
+          addToast(successMsg, 'success');
           navigateToFolder(currentPath.value);
         }
       } catch (err) {
-        addToast('Move failed.', 'error');
+        addToast(isCopy ? 'Copy failed.' : 'Move failed.', 'error');
       }
     }
 
