@@ -1,4 +1,4 @@
-In 2026, if you want to free yourself from Google Drive or Microsoft 365, self-hosted options remain surprisingly limited. Nextcloud is essentially the only serious choice, with very few real alternatives. DjanCloud was born out of this frustration: a fast, lightweight Nextcloud-compatible server built with Django, offering the essential features without the complexity of the PHP stack.
+In 2026, if you want to free yourself from Google Drive or Microsoft 365, self-hosted options remain surprisingly limited. Nextcloud is essentially the only serious choice, with very few real alternatives. DjanCloud was born out of this frustration: an all-in-one, lightweight Nextcloud-compatible server with a 100% Python backend built on Django and a Vue.js frontend, offering the essential features without the complexity of the PHP stack.
 
 What is working so far:
 
@@ -10,6 +10,7 @@ What is working so far:
 - Collaborative markdown editor
 - Shared calendars with CalDAV support
 - Shared contacts with CardDAV support
+- Email client with SMTP and IMAP support
 
 What I'm planning to do:
 
