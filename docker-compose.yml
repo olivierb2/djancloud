@@ -61,6 +61,42 @@ services:
       redis:
         condition: service_healthy
 
+  smtp:
+    build:
+      context: .
+      target: app
+    command: python manage.py smtpserver
+    ports:
+      - "8025:8025"
+    environment:
+      DB_HOST: db
+      DB_NAME: djancloud
+      DB_USER: djancloud
+      DB_PASSWORD: djancloud
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  imap:
+    build:
+      context: .
+      target: app
+    command: python manage.py imapserver
+    ports:
+      - "1143:1143"
+    environment:
+      DB_HOST: db
+      DB_NAME: djancloud
+      DB_USER: djancloud
+      DB_PASSWORD: djancloud
+    depends_on:
+      db:
+        condition: service_healthy
+
   nginx:
     build:
       context: .
