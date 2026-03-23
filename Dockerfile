@@ -5,6 +5,7 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend/ ./
+COPY file/templates/ ../file/templates/
 RUN npm run build
 
 # Python application
